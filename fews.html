@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pawa Flood Early Warning Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#e8f1f5;--card:#ffffff;--ink:#0b2a3c;--mute:#587080;--line:#c7d6de;--water:#1c7fb5;--l1:#e6b800;--l2:#f07a00;--l3:#d62839;--lb:#4fb3e8;--ok:#1f9d55}
+*{box-sizing:border-box}
+html,body{overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Barlow,system-ui,sans-serif}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex:none}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:20px 24px 50px;position:relative;background:var(--ink);color:#fff}
+.hw{position:absolute;left:0;bottom:-1px;width:100%;height:32px;overflow:hidden;pointer-events:none}
+.hw svg{position:absolute;left:0;bottom:0;width:200%;height:100%}
+.hw .w1{fill:var(--water);animation:hw 16s linear infinite}
+.hw .w2{fill:var(--bg);animation:hw 10s linear infinite reverse}
+@keyframes hw{to{transform:translateX(-50%)}}
+h1{font:800 28px "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;margin:0;display:flex;gap:10px;align-items:center}
+header p{margin:2px 0 0;color:#b5cbd7;font-size:13px;letter-spacing:.04em}
+.badge{display:inline-flex;gap:8px;align-items:center;padding:6px 14px;border:1px solid rgba(255,255,255,.5);font:600 13px "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#d6e4eb;position:relative;z-index:1}
+button.badge{background:none;cursor:pointer}button.badge.main{background:var(--l1);color:#000;border-color:var(--l1)}button.badge.syn{background:#fff;color:var(--ink);border-color:#fff}
+.badge.on{background:#fff;color:var(--ink);border-color:#fff}.badge.off{color:#ffb8bf;border-color:#ffb8bf}
+main{max-width:1200px;margin:0 auto;padding:22px 24px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+.top{display:grid;grid-template-columns:400px minmax(0,1fr);gap:20px}
+.panel{min-width:0;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--ink);padding:16px 18px}
+h2{font:800 17px "Barlow Condensed",sans-serif;letter-spacing:.12em;text-transform:uppercase;margin:0 0 12px;display:flex;gap:8px;align-items:center}
+.alert{--c:var(--lb);position:relative;display:flex;align-items:center;gap:16px;padding:14px 18px 14px 44px;background:var(--card);border:2px solid var(--ink);overflow:hidden}
+.alert::before{content:"";position:absolute;left:0;top:0;bottom:0;width:26px;background:repeating-linear-gradient(-45deg,var(--ink) 0 9px,var(--c) 9px 18px)}
+.alert .sir{width:36px;height:36px}
+.alert b{display:block;font:800 24px/1.15 "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.alert span{font-size:14px;color:var(--mute)}
+.alert.a1{background:#fff6cf}.alert.a2{background:#ffe6cc}
+.alert.a3{background:var(--l3);color:#fff;border-color:var(--l3);animation:alp 1s ease-in-out infinite alternate}
+.alert.a3 span{color:#fff}
+@keyframes alp{from{box-shadow:0 0 0 0 rgba(214,40,57,.55)}to{box-shadow:0 0 0 9px rgba(214,40,57,0)}}
+.rd{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.rd .lvl{margin-top:0;align-self:flex-end}
+.rdr{display:flex;flex-direction:column;align-items:flex-end;gap:4px;color:var(--mute);font-size:13px;letter-spacing:.06em}
+.gauge{display:block;width:100%;height:auto;--wc:var(--lb)}
+.gauge .rl{font:600 11px Barlow,sans-serif;fill:var(--mute);text-anchor:end}
+.gauge .sky2{fill:#566b78;opacity:0;transition:opacity .8s}
+.gauge.lv1 .sky2{opacity:.16}.gauge.lv2 .sky2{opacity:.32}.gauge.lv3 .sky2{opacity:.5}
+.gauge .sun{fill:#f6c945;transition:opacity .8s}
+.gauge.lv1 .sun,.gauge.lv2 .sun,.gauge.lv3 .sun{opacity:0}
+.gauge .cloud{fill:#fff;transition:fill .8s}
+.gauge.lv1 .cloud{fill:#c9d4da}.gauge.lv2 .cloud{fill:#98a8b1}.gauge.lv3 .cloud{fill:#687984}
+.gauge .rain{opacity:0;transition:opacity .8s;animation:rain .5s linear infinite}
+.gauge.lv1 .rain{opacity:.35}.gauge.lv2 .rain{opacity:.6}.gauge.lv3 .rain{opacity:.9}
+.gauge .land{fill:var(--ink)}
+.gauge .hs{fill:#fff;stroke:var(--ink);stroke-width:2}
+.gauge .ink{fill:var(--ink)}
+.gauge .palm{fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round}
+.wsurf{transition:transform .9s cubic-bezier(.3,.7,.3,1)}
+.wave{fill:var(--wc);transition:fill .5s}
+.wf{opacity:.86;animation:wv 3s linear infinite;stroke:#fff;stroke-opacity:.8;stroke-width:1.2}
+.wb{opacity:.45;animation:wv 5s linear infinite reverse}
+.bub{fill:#fff;opacity:0;animation:bub 3.4s ease-in infinite}
+.gauge .frame{fill:none;stroke:var(--ink);stroke-width:2}
+.mk line{stroke:var(--c);stroke-width:2;stroke-dasharray:6 4}
+.mk rect{fill:#fff;stroke:var(--c);stroke-width:1.5;transition:fill .3s}
+.mk text{font:800 12px "Barlow Condensed",sans-serif;letter-spacing:.08em;text-anchor:middle;fill:var(--ink)}
+.mk tspan{font:600 10.5px Barlow,sans-serif;letter-spacing:0}
+.mk.on line{stroke:var(--ink);stroke-width:2.5;stroke-dasharray:none}
+.mk.on rect{fill:var(--c);stroke:var(--ink);animation:mkp 1s ease-in-out infinite alternate}
+.mk.on text{fill:#fff}
+.mk.on.lt text{fill:#000}
+.nx{display:block;margin-top:8px;font-size:13px;color:var(--mute)}
+@keyframes wv{to{transform:translateX(-40px)}}
+@keyframes rain{to{transform:translate(-8px,40px)}}
+@keyframes bub{0%{transform:translateY(60px);opacity:0}25%{opacity:.75}100%{transform:translateY(6px);opacity:0}}
+@keyframes mkp{from{filter:drop-shadow(0 0 2px var(--c))}to{filter:drop-shadow(0 0 9px var(--c))}}
+@media(prefers-reduced-motion:reduce){.gauge *,.hw svg,.alert{animation:none!important}}
+.reading{display:flex;flex-direction:column;justify-content:center}
+.big{font:800 54px/1 "Barlow Condensed",sans-serif}.big small{font:600 18px Barlow;color:var(--mute)}
+.lvl{margin-top:12px;align-self:flex-start;padding:4px 14px;font:800 16px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:#fff}
+.right{display:grid;gap:20px;align-content:start;min-width:0}
+.kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.kv div{border-left:3px solid var(--ink);padding-left:12px}.kv b{display:block;font:800 24px "Barlow Condensed";letter-spacing:.04em}
+.kv span{color:var(--mute);font-size:13px;display:flex;gap:6px;align-items:center;text-transform:uppercase;letter-spacing:.08em}
+.nodes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.node{border:1px solid var(--line);padding:10px;font-size:13px;background:#fafafa;text-align:center}
+.lamp{height:84px;display:grid;place-items:center;background:#e6e6e6;color:#a0a0a0;border:1px solid var(--line);margin-bottom:10px}
+.lamp .ic{width:34px;height:34px}
+.lamp.rdy{background:#e1f0f8;color:var(--ink);border-color:var(--water)}
+.stt{display:inline-flex;gap:5px;align-items:center;margin-bottom:6px;padding:2px 8px;font:800 12px "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--line);color:var(--mute);background:#fff}
+.stt .ic{width:13px;height:13px;vertical-align:0}
+.stt.up{color:#fff;background:var(--ok);border-color:var(--ok)}
+.lamp.lit{background:var(--c);color:#fff;border-color:var(--c);animation:glow 1s ease-in-out infinite alternate}
+.lamp.lit.dk{color:#000}
+@keyframes glow{from{box-shadow:0 0 12px 2px var(--c)}to{box-shadow:0 0 34px 10px var(--c)}}
+.node b{display:block;font:800 15px "Barlow Condensed";letter-spacing:.08em;text-transform:uppercase}
+.node b.fr{color:var(--water);font-size:14px}
+.node .pur{display:block;font:600 13px "Barlow Condensed";letter-spacing:.1em;color:var(--mute);margin-bottom:6px}
+.node .meta{font-size:12px;line-height:1.4}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{font:600 12px "Barlow Condensed";letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.scroll{max-height:380px;overflow:auto}
+button{font:800 14px "Barlow Condensed";letter-spacing:.1em;text-transform:uppercase;display:inline-flex;gap:8px;align-items:center;padding:8px 16px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
+button.alt{background:#fff;color:var(--ink)}button:hover{opacity:.85}button:focus-visible{outline:3px solid var(--l1);outline-offset:2px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}.bar h2{margin:0}
+.chip{display:inline-flex;gap:6px;align-items:center;padding:3px 10px;font:800 13px "Barlow Condensed";letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--mute);color:var(--mute)}
+.chip.pass{background:var(--ink);color:#fff;border-color:var(--ink)}.chip.part{color:var(--ink);border-color:var(--ink)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.cards div{border-left:3px solid var(--ink);padding-left:10px}.cards b{display:block;font:800 22px "Barlow Condensed";letter-spacing:.04em}
+.cards span{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.g2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+.g2>div{overflow-x:auto}
+.wrap{overflow-x:scroll;max-width:100%;border:1px solid var(--line);background:#fff;cursor:grab;display:flex}
+#yax{position:sticky;left:0;z-index:2;flex:0 0 76px;height:280px;background:#fff;border-right:2px solid var(--ink)}
+#yax span{position:absolute;right:6px;transform:translateY(-50%);font:800 13px "Barlow Condensed",sans-serif;letter-spacing:.04em;white-space:nowrap;color:var(--ink)}
+#yax span i{font-style:normal;font-weight:600;color:var(--mute);font-size:11px;margin-right:4px}
+#yax em{position:absolute;left:4px;top:2px;font:600 11px "Barlow Condensed",sans-serif;font-style:normal;letter-spacing:.06em;color:var(--mute)}
+.wrap canvas{display:block}
+@media(max-width:860px){.top,.two,.g2{grid-template-columns:1fr}.nodes{grid-template-columns:repeat(2,1fr)}.kv{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 0 1 10 0v6M5 18h14v3H5zM12 2v2M4.5 5l1.5 1.5M19.5 5L18 6.5M2 12h2M20 12h2"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M12 20h.01M2 8.82a15 15 0 0 1 20 0M5 12.86a10 10 0 0 1 14 0M8.5 16.43a5 5 0 0 1 7 0"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 14l2 2 4-4"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></symbol>
+  <symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7z"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+</svg>
+
+<header>
+  <div><h1><svg class="ic" style="width:26px;height:26px"><use href="#i-drop"/></svg>Pawa Flood Early Warning</h1><p>BARANGAY PAWA, MATNOG, SORSOGON &middot; LIVE MQTT SIMULATION DATA &middot; VERSION 7 (NOV 16)</p></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative;z-index:1"><button id="syncBtn" class="badge" type="button" title="Shared history">History: this device only</button><span id="conn" class="badge"><svg class="ic"><use href="#i-wifi"/></svg><span>Connecting</span></span></div>
+  <div class="hw" aria-hidden="true">
+    <svg class="w1" viewBox="0 0 2400 32" preserveAspectRatio="none"><path d="M0 14 q50 -16 100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 V32 H0 Z"/></svg>
+    <svg class="w2" viewBox="0 0 2400 32" preserveAspectRatio="none"><path d="M0 22 q50 -12 100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 V32 H0 Z"/></svg>
+  </div>
+</header>
+<main>
+  <section id="alert" class="alert" role="status">
+    <svg class="ic sir"><use href="#i-siren"/></svg>
+    <div><b id="alT">Waiting for data</b><span id="alD">Start the simulation to see the water level.</span></div>
+  </section>
+  <section class="top">
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-drop"/></svg>Water level</h2>
+      <div class="rd"><div class="big"><span id="dist">–</span> <small>cm</small></div><div class="rdr"><span id="lvl" class="lvl">No data</span><span>SENSOR TO WATER</span></div></div>
+      <svg id="gauge" class="gauge lv0" viewBox="0 0 364 280" role="img" aria-label="River scene showing the water level against the three warning lines">
+        <defs>
+          <clipPath id="sc"><rect x="28" y="0" width="336" height="280" rx="4"/></clipPath>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe8f4"/><stop offset="1" stop-color="#f6fbfd"/></linearGradient>
+          <linearGradient id="dp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/></linearGradient>
+          <pattern id="rn" width="26" height="40" patternUnits="userSpaceOnUse"><path d="M15 3 l-3 10 M25 23 l-3 10" stroke="#35556a" stroke-width="1.4" stroke-linecap="round"/></pattern>
+        </defs>
+        <text class="rl" x="22" y="9">cm</text><text class="rl" x="22" y="24">0</text><text class="rl" x="22" y="84">39</text><text class="rl" x="22" y="144">54</text><text class="rl" x="22" y="204">69</text><text class="rl" x="22" y="264">400</text>
+        <g clip-path="url(#sc)">
+          <rect x="28" y="0" width="336" height="280" fill="url(#sky)"/>
+          <rect class="sky2" x="28" y="0" width="336" height="280"/>
+          <circle class="sun" cx="146" cy="26" r="13"/>
+          <g class="cloud"><ellipse cx="186" cy="40" rx="17" ry="9"/><ellipse cx="202" cy="33" rx="15" ry="12"/><ellipse cx="220" cy="41" rx="16" ry="8"/><ellipse cx="240" cy="16" rx="13" ry="7"/><ellipse cx="252" cy="12" rx="12" ry="8"/><ellipse cx="265" cy="17" rx="13" ry="6"/></g>
+          <path class="palm" d="M270 80 q-1 -20 -4 -34 M266 46 q-10 -10 -22 -2 M266 46 q-5 -15 -17 -15 M266 46 q3 -15 13 -17 M266 46 q11 -8 20 0 M266 46 q8 2 11 11 M266 46 q-7 3 -10 13"/>
+          <path class="hs" d="M282 80 V46 H330 V80"/>
+          <path class="ink" d="M274 48 L306 18 L338 48 Z"/>
+          <rect class="ink" x="300" y="58" width="11" height="22"/>
+          <rect class="ink" x="287" y="54" width="8" height="8"/><rect class="ink" x="317" y="54" width="8" height="8"/>
+          <rect class="rain" x="0" y="-40" width="400" height="330" fill="url(#rn)"/>
+          <g id="wsurf" class="wsurf" style="transform:translateY(260px)">
+            <g transform="translate(-10 -2)"><path class="wave wb" d="M0 0 q10 -3.5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 V300 H0 Z"/></g>
+            <path class="wave wf" d="M0 0 q10 -3.5 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 V300 H0 Z"/>
+            <rect x="0" y="0" width="440" height="300" fill="url(#dp)"/>
+            <circle class="bub" cx="96" cy="0" r="2"/><circle class="bub" cx="140" cy="0" r="1.5" style="animation-delay:1.1s"/><circle class="bub" cx="172" cy="0" r="2.5" style="animation-delay:2.2s"/>
+          </g>
+          <path class="land" d="M28 260 H170 L196 200 H216 L262 80 H364 V280 H28 Z"/>
+        </g>
+        <rect x="28" y="20" width="12" height="30" fill="var(--ink)"/><rect x="28" y="50" width="12" height="30" fill="#fff"/><rect x="28" y="80" width="12" height="30" fill="var(--ink)"/><rect x="28" y="110" width="12" height="30" fill="#fff"/><rect x="28" y="140" width="12" height="30" fill="var(--ink)"/><rect x="28" y="170" width="12" height="30" fill="#fff"/><rect x="28" y="200" width="12" height="30" fill="var(--ink)"/><rect x="28" y="230" width="12" height="30" fill="#fff"/><rect x="28" y="20" width="12" height="240" fill="none" stroke="var(--ink)" stroke-width="1.5"/>
+        <rect class="frame" x="28" y="0" width="336" height="280" rx="4"/>
+        <g class="mk" id="mk3" style="--c:var(--l3)"><line x1="40" x2="364" y1="80" y2="80"/><rect x="48" y="69" width="104" height="22" rx="3"/><text x="100" y="84.5">HIGH <tspan>≤39 cm</tspan></text></g><g class="mk" id="mk2" style="--c:var(--l2)"><line x1="40" x2="364" y1="140" y2="140"/><rect x="48" y="129" width="104" height="22" rx="3"/><text x="100" y="144.5">MODERATE <tspan>54 cm</tspan></text></g><g class="mk lt" id="mk1" style="--c:var(--l1)"><line x1="40" x2="364" y1="200" y2="200"/><rect x="48" y="189" width="104" height="22" rx="3"/><text x="100" y="204.5">LOW <tspan>69 cm</tspan></text></g>
+        <g><title>Ultrasonic sensor</title><path d="M34 20 V8 H88" fill="none" stroke="var(--ink)" stroke-width="3"/><rect x="80" y="5" width="34" height="15" rx="2" fill="var(--ink)"/><circle cx="89" cy="14" r="3.5" fill="#fff"/><circle cx="105" cy="14" r="3.5" fill="#fff"/></g>
+      </svg>
+      <span id="next" class="nx"></span>
+    </div>
+    <div class="right">
+      <div class="panel kv">
+        <div><b id="act">–</b><span><svg class="ic"><use href="#i-cpu"/></svg>Active sensor</span></div>
+        <div><b id="hb">–</b><span><svg class="ic"><use href="#i-heart"/></svg>Primary heartbeat</span></div>
+        <div><b id="pst">–</b><span><svg class="ic"><use href="#i-power"/></svg>Primary status</span></div>
+        <div><b id="bst">–</b><span><svg class="ic"><use href="#i-cpu"/></svg>Backup sensor</span></div>
+      </div>
+      <div class="panel"><h2><svg class="ic"><use href="#i-bell"/></svg>Alarm nodes</h2><div class="nodes" id="nodes"></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="mapPanel">
+    <h2><svg class="ic"><use href="#i-drop"/></svg>Pawa flood map <span style="color:var(--mute);font-weight:600">(live, follows the sensor)</span></h2>
+    <iframe id="mapFrame" title="Pawa flood map" style="width:100%;height:720px;border:2px solid var(--ink);display:block;background:#dfe9ee"></iframe>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><h2><svg class="ic"><use href="#i-check"/></svg>Functional tests</h2><button id="rep" class="alt"><svg class="ic"><use href="#i-down"/></svg>Export test report</button></div>
+    <table><thead><tr><th>Test</th><th>Status</th><th>Evidence from the simulation</th></tr></thead><tbody id="ft"></tbody></table>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><h2><svg class="ic"><use href="#i-bell"/></svg>Alert statistics <span style="color:var(--mute);font-weight:600">(triggered only)</span></h2><button id="csvA"><svg class="ic"><use href="#i-down"/></svg>Export alerts CSV</button></div>
+    <div class="cards" id="aCards"></div>
+    <div class="g2">
+      <div><table><thead><tr><th>Measure during alerts (ms)</th><th class="n">Samples</th><th class="n">Min</th><th class="n">Avg</th><th class="n">Max</th></tr></thead><tbody id="aStats"></tbody></table></div>
+      <div><table><thead><tr><th>Time in level</th><th class="n">Times</th><th class="n">Total</th><th class="n">Longest</th></tr></thead><tbody id="aLv"></tbody></table></div>
+    </div>
+    <h2 style="margin:18px 0 8px">Alert history</h2>
+    <div class="scroll"><table><thead><tr><th>Date</th><th>Start</th><th class="n">Duration</th><th>Peak</th><th class="n">Closest (cm)</th><th>Nodes</th><th class="n">To N1&amp;2 (ms)</th><th class="n">To N3&amp;4 (ms)</th><th class="n">To N5 (ms)</th><th>Control</th></tr></thead><tbody id="aHist"></tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <h2><svg class="ic"><use href="#i-heart"/></svg>System health <span style="color:var(--mute);font-weight:600">(always running)</span></h2>
+    <div class="cards" id="hCards"></div>
+    <div class="scroll"><table><thead><tr><th>Node</th><th>Status</th><th>Last seen</th><th class="n">Uptime</th><th class="n">MQTT reconnects</th><th class="n">Wi-Fi reconnects</th><th class="n">Read errors</th><th class="n">Alert delivery</th></tr></thead><tbody id="hNodes"></tbody></table></div>
+  </section>
+
+  <section style="display:grid;grid-template-columns:minmax(0,1fr);gap:20px">
+    <div class="panel"><h2><svg class="ic"><use href="#i-timer"/></svg>Performance statistics (all data, ms)</h2>
+      <table><thead><tr><th>Test</th><th class="n">Samples</th><th class="n">Min</th><th class="n">Avg</th><th class="n">Max</th><th class="n">Last</th></tr></thead><tbody id="stats"></tbody></table>
+    </div>
+    <div class="panel"><h2><svg class="ic"><use href="#i-pulse"/></svg>Water height history <span style="color:var(--mute);font-weight:600">(scroll sideways for past readings)</span></h2><div class="wrap" id="wrap"><div id="yax" aria-hidden="true"></div><canvas id="chart" width="900" height="280"></canvas></div></div>
+  </section>
+
+  <section class="panel">
+    <div class="bar"><h2><svg class="ic"><use href="#i-hist"/></svg>Event history <span id="cnt" style="color:var(--mute);font-weight:600"></span></h2>
+      <div style="display:flex;gap:8px"><button id="csv"><svg class="ic"><use href="#i-down"/></svg>Export CSV</button><button id="clr" class="alt"><svg class="ic"><use href="#i-trash"/></svg>Clear history</button></div></div>
+    <div class="scroll"><table><thead><tr><th>Date</th><th>Time</th><th>Source</th><th>Event</th><th class="n">ms</th><th>Details</th></tr></thead><tbody id="hist"></tbody></table></div>
+  </section>
+</main>
+
+<script>
+const HOST = "wss://54713917aa8e4edaa24014e38eeaaab6.s1.eu.hivemq.cloud:8884/mqtt";
+const USER = "Dashboard", PASS = "DarKKnight";
+// Main dashboard login (can publish). Typed once on the main device and kept only in that browser.
+let MAINC = null; try { MAINC = JSON.parse(localStorage.getItem("fews_main") || "null"); } catch(e){}
+const BASE = "floodwarning/lebronjames102326/";
+const TESTS = {"PT-01":"Water-level detection","PT-02":"MQTT publishing","PT-03":"Primary failure detection","PT-04":"Backup takeover","PT-05":"Warning activation","FWD":"Relay logic message forwarding"};
+const COL = {1:"var(--l1)",2:"var(--l2)",3:"var(--l3)"};
+const $ = id => document.getElementById(id);
+const tn = k => k==="FWD" ? "PT-06" : k;
+const pad = n => String(n).padStart(2,"0");
+const dt = t => { const d = new Date(t); return `${pad(d.getMonth()+1)}/${pad(d.getDate())}/${String(d.getFullYear()).slice(2)}`; };
+const tm = t => new Date(t).toLocaleTimeString("en-GB",{hour12:false});
+
+let hist = JSON.parse(localStorage.getItem("fews_hist") || "[]");
+hist.forEach(h => { if(h.type==="FWD") h.ev = "PT-06 Relay logic message forwarding"; });
+let pts = JSON.parse(localStorage.getItem("fews_chart") || "[]");
+let st = {hbFirst:true, dist:null, level:null, lv:{1:0,2:0,3:0}, active:null, hb:0, alive:false, nodes:{}};
+let lt, lastH = null, lastT = 0;
+let sess = JSON.parse(localStorage.getItem("fews_sess") || "[]"), cur = null, lv0 = null;
+let hbs = JSON.parse(localStorage.getItem("fews_hbs") || '{"n":0,"sum":0,"min":0,"max":0,"exp":0,"rec":0,"last":0}');
+let health = JSON.parse(localStorage.getItem("fews_health") || "{}"), mon = +(localStorage.getItem("fews_mon") || 0);
+const sv = (k,v) => { localStorage.setItem(k, JSON.stringify(v)); touch(k); };
+
+// ---------- shared history ----------
+// The main dashboard records the history and saves it on the broker (retained messages
+// under dash/). Every other device loads it from there, so all devices show the same history.
+const CH = 200;                                   // history entries per saved chunk
+let gen = +(localStorage.getItem("fews_gen") || 0) || Date.now();   // changes when history is cleared
+let hbase = +(localStorage.getItem("fews_base") || 0);              // entries dropped from the start
+let localTs = +(localStorage.getItem("fews_ts") || 0) || (hist.length ? hist[hist.length-1].t : 0);
+const dirty = {hist:false, chart:false, meta:false};
+let sent = {init:false}, adoptAt = Infinity, applying = false, syncedAt = 0;
+const inb = {meta:null, chart:null, ch:{}};
+function touch(k){
+  if(applying) return;
+  localTs = Date.now();
+  if(k === "fews_hist") dirty.hist = true; else if(k === "fews_chart") dirty.chart = true;
+  dirty.meta = true;
+}
+function syncBadge(){
+  const b = $("syncBtn"); if(!b) return;
+  b.className = "badge" + (MAINC ? " main" : syncedAt ? " syn" : "");
+  b.textContent = MAINC ? "Main dashboard: recording" : syncedAt ? "History synced " + tm(syncedAt) : "History: this device only";
+}
+// main dashboard: save what changed
+function flush(){
+  if(!MAINC || !c.connected || Date.now() < adoptAt) return;
+  const now = Date.now(), pub = (t,o) => c.publish(BASE+"dash/"+t, o == null ? "" : JSON.stringify(o), {retain:true, qos:1});
+  const total = hbase + hist.length, first = Math.floor(hbase/CH), last = Math.max(first, Math.floor(Math.max(total-1, hbase)/CH));
+  const chunk = k => pub("hist/"+k, {g:gen, a:hist.slice(Math.max(0, k*CH-hbase), Math.max(0, (k+1)*CH-hbase))});
+  let any = false;
+  if(dirty.hist || !sent.init || sent.gen !== gen){
+    const same = sent.init && sent.gen === gen;
+    const from = same ? Math.max(first, Math.floor(Math.min(sent.total, total)/CH)) : first;
+    for(let k = from; k <= last; k++) chunk(k);
+    if(same && sent.base !== hbase && from > first) chunk(first);
+    if(sent.init){ for(let k = sent.first; k < first; k++) pub("hist/"+k, null); for(let k = last+1; k <= sent.last; k++) pub("hist/"+k, null); }
+    sent = Object.assign(sent, {init:true, gen, total, base:hbase, first, last}); dirty.hist = false; any = true;
+  }
+  if((dirty.chart || !sent.chartT) && now - (sent.chartT||0) > 5000){ pub("chart", {g:gen, p:pts}); sent.chartT = now; dirty.chart = false; any = true; }
+  if(any || dirty.meta || now - (sent.metaT||0) > 10000){
+    pub("meta", {g:gen, ts:localTs, base:hbase, first, last, n:hist.length, sess, hbs, mon, health}); sent.metaT = now; dirty.meta = false;
+    localStorage.setItem("fews_ts", localTs); localStorage.setItem("fews_gen", gen); localStorage.setItem("fews_base", hbase);
+  }
+}
+// other devices: load the saved history
+function applySync(){
+  const m = inb.meta; if(!m) return false;
+  const a = [];
+  for(let k = m.first; k <= m.last; k++){ const ch = inb.ch[k]; if(!ch || ch.g !== m.g) return false; a.push(...ch.a); }
+  if(a.length !== m.n) return false;
+  // keep a copy of this device's own history before the shared one replaces it
+  if(hist.length && gen !== m.g){ try { localStorage.setItem("fews_backup", JSON.stringify({t:Date.now(), hbase, hist, pts, sess, hbs, mon})); } catch(e){} }
+  applying = true;
+  hist = a; hbase = m.base; gen = m.g; sess = m.sess || []; hbs = m.hbs || hbs; mon = m.mon || 0;
+  Object.keys(m.health || {}).forEach(n => { if(!health[n] || health[n].t < m.health[n].t) health[n] = m.health[n]; });
+  if(inb.chart && inb.chart.g === m.g){ pts = inb.chart.p || []; lastH = null; }
+  try {
+    localStorage.setItem("fews_hist", JSON.stringify(hist)); localStorage.setItem("fews_chart", JSON.stringify(pts)); localStorage.setItem("fews_sess", JSON.stringify(sess));
+    localStorage.setItem("fews_hbs", JSON.stringify(hbs)); localStorage.setItem("fews_health", JSON.stringify(health)); localStorage.setItem("fews_mon", mon);
+    localStorage.setItem("fews_gen", gen); localStorage.setItem("fews_base", hbase); localStorage.setItem("fews_ts", m.ts);
+  } catch(e){}
+  localTs = m.ts; applying = false; syncedAt = Date.now();
+  render(); drawChart(); hRender(); syncBadge();
+  return true;
+}
+let syncT = null;
+function syncIn(s, v, retained){
+  if(MAINC && Date.now() >= adoptAt) return;            // the main dashboard is the source, it does not load
+  try {
+    if(s === "dash/meta") inb.meta = v ? JSON.parse(v) : null;
+    else if(s === "dash/chart") inb.chart = v ? JSON.parse(v) : null;
+    else if(s.startsWith("dash/hist/")){ const k = +s.slice(10); if(v) inb.ch[k] = JSON.parse(v); else delete inb.ch[k]; }
+  } catch(e){ return; }
+  if(MAINC) return;                                     // main: only collect during the first seconds
+  clearTimeout(syncT); syncT = setTimeout(applySync, 400);
+}
+const dur = ms => ms<1000 ? Math.round(ms)+" ms" : ms<60000 ? (ms/1000).toFixed(1)+" s" : Math.floor(ms/60000)+" m "+Math.round(ms%60000/1000)+" s";
+const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
+const card = (b,l) => `<div><b>${b}</b><span>${l}</span></div>`;
+// Purok label of each alarm node (change the text here if a name is wrong)
+const PUROK = {1:["PUROK 3","BAYABAS"], 2:["PUROK 2","SAGING"], 3:["PUROK 4","SANTOL"], 4:["PUROK 1","MANGGA"], 5:["PUROK 5","PIÑA"]};
+const LN = ["Normal","LOW","MODERATE","HIGH"];
+// Live status sent by each node ("ONLINE:<level>") or by the broker the moment a node drops ("OFFLINE")
+const stat = {};
+function online(n){
+  const now = Date.now(), s = stat[n], h = health[n], a = st.nodes[n];
+  if(s && !s.on && (!h || s.t >= h.t)) return false;
+  // a node that sends status beats is offline when no beat arrived for 6 seconds
+  if(s && s.on && s.n >= 2) return now - s.t < 6000;
+  return !!((h && now-h.t < 25000) || (s && s.on && now-s.t < 25000) || (a && now-a.t < 25000));
+}
+const ALARMS = [1,2,3,4,5].map(i=>"AlarmNode"+i), NODES = ["PrimarySensor","BackupSensor"].concat(ALARMS);
+const AS = {CAS1:"Cascade: sensor to nodes 1 & 2",CAS2:"Cascade: sensor to nodes 3 & 4",CAS3:"Cascade: sensor to node 5"};
+Object.keys(TESTS).forEach(k => AS[k] = (k==="FWD" ? "PT-06 " : "") + TESTS[k]);
+
+function startSess(L){ cur = {start:Date.now(), peak:L, minD:st.dist==null?400:st.dist, s12:null, s34:null, s5:null, nodes:[], ctl:st.active||"PRIMARY"}; }
+function endSess(){ if(!cur) return; cur.end = Date.now(); sess.push(cur); sv("fews_sess", sess); cur = null; }
+function casc(stage, L){
+  if(!lv0 || lv0.L!==L || lv0.got[stage]) return;
+  lv0.got[stage] = 1;
+  const ms = Date.now() - lv0.t, nm = {1:"nodes 1 & 2",2:"nodes 3 & 4",3:"node 5"}[stage], k = {1:"s12",2:"s34",3:"s5"}[stage];
+  if(cur && cur[k]==null) cur[k] = ms;
+  log("Cascade","Sensor to "+nm, ms, "Level "+L, "CAS"+stage);
+}
+function inAlert(t){ return sess.some(x => t>=x.start-2000 && t<=x.end+2000) || (cur && t>=cur.start-2000); }
+
+function aRender(){
+  const now = Date.now(), all = cur ? sess.concat([Object.assign({},cur,{end:now})]) : sess;
+  const d = all.map(x=>x.end-x.start), pk = [1,2,3].map(L=>all.filter(x=>x.peak===L).length);
+  $("aCards").innerHTML = card(all.length,"Total alerts")+card(all.length?dur(avg(d)):"–","Average duration")+card(all.length?dur(Math.max(...d)):"–","Longest alert")+card(pk.join(" / "),"Peak L1 / L2 / L3")+card(cur?"ACTIVE":"None","Alert now");
+  $("aStats").innerHTML = Object.keys(AS).map(k => {
+    const v = hist.filter(h=>h.type===k && inAlert(h.t)).map(h=>h.ms);
+    return v.length ? `<tr><td>${AS[k]}</td><td class="n">${v.length}</td><td class="n">${Math.min(...v).toFixed(2)}</td><td class="n">${avg(v).toFixed(2)}</td><td class="n">${Math.max(...v).toFixed(2)}</td></tr>`
+                    : `<tr><td>${AS[k]}</td><td class="n">0</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>`;
+  }).join("");
+  const tl = {1:{n:0,s:0,m:0},2:{n:0,s:0,m:0},3:{n:0,s:0,m:0}}; let L = 0, t0 = 0;
+  const close = t => { if(L){ const x = t-t0; tl[L].s += x; tl[L].m = Math.max(tl[L].m,x); } };
+  hist.filter(h=>h.type==="LEVEL").forEach(h => { close(h.t); const m = h.info.match(/Level (\d)/); L = m ? +m[1] : 0; t0 = h.t; if(L) tl[L].n++; });
+  close(now);
+  $("aLv").innerHTML = [1,2,3].map(i=>`<tr><td style="color:${COL[i]};font-weight:700">Level ${i}</td><td class="n">${tl[i].n}</td><td class="n">${tl[i].n?dur(tl[i].s):"–"}</td><td class="n">${tl[i].n?dur(tl[i].m):"–"}</td></tr>`).join("");
+  const f = v => v==null ? "–" : v.toFixed(0);
+  $("aHist").innerHTML = all.slice().reverse().map(x=>`<tr><td>${dt(x.start)}</td><td>${tm(x.start)}</td><td class="n">${dur(x.end-x.start)}${x===cur||!x.end?"":""}</td><td style="color:${COL[x.peak]};font-weight:700">Level ${x.peak}</td><td class="n">${x.minD}</td><td>${x.nodes.length}/5</td><td class="n">${f(x.s12)}</td><td class="n">${f(x.s34)}</td><td class="n">${f(x.s5)}</td><td>${x.ctl}</td></tr>`).join("")
+    || `<tr><td colspan="10" style="color:var(--mute)">No alerts yet. Drag a sensor slider to 69 cm or less.</td></tr>`;
+}
+
+function hRender(){
+  const now = Date.now();
+  let down = 0, ls = null, bt = 0, b0 = null, fo = 0;
+  hist.forEach(h => {
+    if(h.type==="HB"){ if(/lost/.test(h.ev)) ls = h.t; else if(ls){ down += h.t-ls; ls = null; } }
+    if(h.type==="ACTIVE"){ if(h.info.startsWith("BACKUP")){ fo++; b0 = h.t; } else if(b0){ bt += h.t-b0; b0 = null; } }
+  });
+  if(ls) down += now-ls;
+  if(b0) bt += now-b0;
+  const up = mon>10000 ? Math.max(0, 100*(1-down/mon)).toFixed(1)+"%" : "–";
+  const dl = hbs.exp ? Math.min(100, 100*hbs.rec/hbs.exp).toFixed(1)+"%" : "–";
+  $("hCards").innerHTML = card(up,"Primary uptime")+card(fo,"Failovers")+card(dur(bt),"Backup in control")+card(hbs.n?`${hbs.min} / ${(hbs.sum/hbs.n).toFixed(0)} / ${hbs.max}`:"–","Heartbeat gap ms (min / avg / max)")+card(dl,"Heartbeat delivery")+card(dur(mon),"Monitored time");
+  const total = sess.length + (cur?1:0);
+  $("hNodes").innerHTML = NODES.map(n => {
+    const h = health[n], on = online(n);
+    const dl2 = ALARMS.includes(n) ? (total ? `${[...sess,...(cur?[cur]:[])].filter(x=>x.nodes.includes(n)).length}/${total}` : "–") : "–";
+    return `<tr><td>${n}</td><td><span class="chip ${on?"pass":""}">${h?(on?"Online":"Offline"):"No data"}</span></td><td>${h?dt(h.t)+" "+tm(h.t):"–"}</td><td class="n">${h?dur(h.up*1000):"–"}</td><td class="n">${h?h.mq:"–"}</td><td class="n">${h?h.wf:"–"}</td><td class="n">${h?h.er:"–"}</td><td class="n">${dl2}</td></tr>`;
+  }).join("");
+}
+
+// Log a node going offline or coming back, and refresh the cards at once
+const wasOn = {};
+function watch(){
+  let ch = false;
+  NODES.forEach(n => { const on = online(n);
+    if(wasOn[n] === undefined){ wasOn[n] = on; ch = true; return; }
+    if(wasOn[n] !== on){ wasOn[n] = on; ch = true; if(c.connected) log(n, on ? "Node is online" : "Node went offline", null, on ? "Status received again" : "No status from the node", "NODE"); } });
+  if(ch){ nodes(); hRender(); }
+}
+function tick(){
+  if(c.connected){ mon += 1000; if(mon%5000===0) localStorage.setItem("fews_mon", mon); }
+  const lp = pts[pts.length-1];
+  if(c.connected && lp && Date.now()-lp[0] > 30000 && !/Stopped/.test(lp[2]||"")){ lp[2] = (lp[2]?lp[2]+" / ":"")+"Stopped"; sv("fews_chart", pts); drawChart(); }
+  watch();
+  hRender();
+  nodes();
+}
+
+function log(src, ev, ms, info, type){
+  hist.push({t:Date.now(), src, ev, ms, info:info||"", type:type||""});
+  if(hist.length > 3000){ hbase += hist.length - 3000; hist = hist.slice(-3000); }
+  localStorage.setItem("fews_hist", JSON.stringify(hist)); touch("fews_hist");
+  render();
+}
+
+function render(){
+  const rows = hist.slice(-200).reverse().map(h =>
+    `<tr><td>${dt(h.t)}</td><td>${tm(h.t)}</td><td>${h.src}</td><td>${h.ev}</td><td class="n">${h.ms==null?"":h.ms.toFixed(2)}</td><td>${h.info}</td></tr>`).join("");
+  $("hist").innerHTML = rows || `<tr><td colspan="6" style="color:var(--mute)">No events yet. Start the simulation and move a distance slider.</td></tr>`;
+  $("cnt").textContent = `(${hist.length} saved)`;
+  $("stats").innerHTML = Object.keys(TESTS).map(k => {
+    const v = hist.filter(h => h.type===k).map(h => h.ms);
+    if(!v.length) return `<tr><td>${tn(k)} ${TESTS[k]}</td><td class="n">0</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="n">–</td></tr>`;
+    const avg = v.reduce((a,b)=>a+b,0)/v.length;
+    return `<tr><td>${tn(k)} ${TESTS[k]}</td><td class="n">${v.length}</td><td class="n">${Math.min(...v).toFixed(2)}</td><td class="n">${avg.toFixed(2)}</td><td class="n">${Math.max(...v).toFixed(2)}</td><td class="n">${v[v.length-1].toFixed(2)}</td></tr>`;
+  }).join("");
+  ftRender(); aRender(); hRender();
+}
+
+const FT = [["FT-01","Water-level detection and classification"],["FT-02","MQTT communication and message transmission"],["FT-03","Primary ESP32 failure detection and backup takeover"],["FT-04","Sequential warning dissemination"],["FT-05","LED and buzzer activation"]];
+
+function ftEval(){
+  const H = hist, r = {};
+  const res = (ok, some, passTxt, partTxt) => ok ? ["pass", passTxt] : [some ? "part" : "none", partTxt];
+
+  const lv = [...new Set(H.filter(h=>h.type==="PT-01").map(h=>+((h.info.match(/Level (\d)/)||[])[1]||0)).filter(x=>x>0))].sort();
+  r["FT-01"] = res(lv.length>=3, lv.length, "Levels 1, 2 and 3 were detected and classified", lv.length ? `Levels classified so far: ${lv.join(", ")} (need 1, 2 and 3)` : "Move a sensor slider through each level");
+
+  const pub = H.filter(h=>h.type==="PT-02").length, chg = H.filter(h=>h.type==="LEVEL").length;
+  r["FT-02"] = res(pub && chg, pub || chg, `${pub} publishes sent, ${chg} level updates received back from the broker`, `${pub} publishes sent, ${chg} level updates received (need both)`);
+
+  const f = [H.some(h=>h.type==="PT-03"), H.some(h=>h.type==="PT-04"), H.some(h=>h.type==="ACTIVE" && h.info.startsWith("BACKUP"))];
+  r["FT-03"] = res(f.every(Boolean), f.some(Boolean), "Failure detected, backup took over and became the active sensor", `Failure detected: ${f[0]?"yes":"no"}, takeover done: ${f[1]?"yes":"no"}, backup in control: ${f[2]?"yes":"no"}`);
+
+  const ok4 = [1,2,3].filter(L => H.some((x,i) => {
+    if(x.type!=="LEVEL" || x.info!==`Level ${L} active`) return false;
+    const a = H.slice(i).find(h=>h.type==="STAGE" && h.src==="Nodes 1 & 2" && h.info==="Level "+L); if(!a) return false;
+    const b = H.slice(H.indexOf(a)).find(h=>h.type==="STAGE" && h.src==="Nodes 3 & 4" && h.info==="Level "+L); if(!b) return false;
+    return H.slice(H.indexOf(b)).some(h=>h.type==="PT-05" && h.src==="AlarmNode5" && h.info.startsWith("Level "+L));
+  }));
+  r["FT-04"] = res(ok4.length, 0, `Order confirmed for Level ${ok4.join(", ")}: sensor, then nodes 1 & 2, then nodes 3 & 4, then node 5`, "Trigger a level with all 5 alarm nodes running");
+
+  const n = new Set(H.filter(h=>h.type==="PT-05").map(h=>h.src));
+  r["FT-05"] = res(n.size>=5, n.size, "All 5 alarm nodes activated their LED and buzzer", `${n.size} of 5 alarm nodes have activated`);
+  return r;
+}
+
+function ftRender(){
+  const r = ftEval(), lab = {pass:"Passed", part:"In progress", none:"Not yet tested"};
+  $("ft").innerHTML = FT.map(([id,name]) => `<tr><td>${id} ${name}</td><td><span class="chip ${r[id][0]}">${lab[r[id][0]]}</span></td><td>${r[id][1]}</td></tr>`).join("");
+}
+
+let nodesSig = "";
+function nodes(){
+  const now = Date.now();
+  const html = [1,2,3,4,5].map(i => {
+    const key = "AlarmNode"+i, n = st.nodes[key], h = health[key];
+    const on = online(key), sN = stat[key];
+    // alert level: the node's own report when it sends one, else its last activation
+    const lvl = !on ? 0 : sN && sN.on && sN.l != null ? sN.l : (n && now - n.t < 60000 && st.level !== 0 ? n.l : 0);
+    const lit = lvl > 0;
+    const stt = `<span class="stt${on?" up":""}"><svg class="ic"><use href="#i-${on?"wifi":"power"}"/></svg>${on?"Online":"Offline"}</span>`;
+    const last = n ? `Last alert: Level ${n.l}<br>${dt(n.t)} ${tm(n.t)}` : "No alerts yet";
+    const meta = lit ? `<div class="meta"><b style="font-size:14px">${LN[lvl]} ALERT ACTIVE</b>${n ? `${dt(n.t)} ${tm(n.t)}<br>${n.ms.toFixed(2)} ms` : ""}</div>`
+               : on  ? `<div class="meta"><b style="font-size:14px">Standing by</b><span style="color:var(--mute)">${last}</span></div>`
+                     : `<div class="meta" style="color:var(--mute)"><b style="font-size:14px">Not running</b>${last}</div>`;
+    return `<div class="node"><div class="lamp${lit?" lit":on?" rdy":""}${lvl===1?" dk":""}" style="${lit?"--c:"+COL[lvl]:""}"><svg class="ic"><use href="#i-bell"/></svg></div><b>${PUROK[i][0]}</b><b class="fr">${PUROK[i][1]}</b><span class="pur">Alarm Node ${i}</span>${stt}${meta}</div>`;
+  }).join("");
+  if(html !== nodesSig){ nodesSig = html; $("nodes").innerHTML = html; }
+}
+
+function gauge(d){
+  const c = Math.max(0, Math.min(400, d)), L = c<=39 ? 3 : c<=54 ? 2 : c<=69 ? 1 : 0;
+  const wy = c>=69 ? 200 + (c-69)*60/331 : c>=54 ? 140 + (c-54)*4 : c>=39 ? 80 + (c-39)*4 : 20 + c*60/39;
+  $("wsurf").style.transform = `translateY(${wy}px)`;
+  $("gauge").setAttribute("class", "gauge lv" + L);
+  $("gauge").style.setProperty("--wc", L ? COL[L] : "var(--lb)");
+  [1,2,3].forEach(i => $("mk"+i).classList.toggle("on", L >= i));
+  $("dist").textContent = d;
+  $("next").textContent = L===3 ? "Highest level reached" : `${c - [69,54,39][L]} cm above the ${["LOW","MODERATE","HIGH"][L]} line`;
+}
+function showLevel(){
+  const l = st.level, el = $("lvl");
+  el.textContent = l==null ? "No data" : ["Normal","MONITAR","PREPARAR","EBAKWAR"][l];
+  el.style.background = l ? COL[l] : "var(--lb)";
+  el.style.color = (l===2||l===3) ? "#fff" : "#000";
+  const A = {n:["Waiting for data","Start the simulation to see the water level."],0:["NORMAL (Safe)","Water is more than 69 cm below the sensor. All LEDs and buzzers are off."],1:["LOW (Monitor)","Water is 69 cm or closer. Yellow LED on. Watch the river and stay alert."],2:["MODERATE (Prepare)","Water is 54 cm or closer. Orange LED on. Get ready to evacuate."],3:["HIGH (Evacuate)","Water is 39 cm or closer. Red LED on. Move to higher ground now."]};
+  const k = l==null ? "n" : l, al = $("alert");
+  al.className = "alert" + (l ? " a" + l : "");
+  al.style.setProperty("--c", l===3 ? "#fff" : l ? COL[l] : "var(--lb)");
+  $("alT").textContent = A[k][0]; $("alD").textContent = A[k][1];
+}
+
+Chart.defaults.color = "#5d5d5d";
+Chart.defaults.borderColor = "#d4d4d4";
+const marksPlugin = {id:"marks", afterDatasetsDraw(ch){
+  const {ctx, chartArea:a, scales:{x}} = ch;
+  pts.forEach((p,i) => { if(!p[2]) return;
+    const X = x.getPixelForValue(i), lab = p[2], col = /Failover/.test(lab) ? "#d62839" : /Stopped/.test(lab) ? "#587080" : "#0b2a3c";
+    ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(X,a.top); ctx.lineTo(X,a.bottom); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = "800 12px Barlow Condensed, sans-serif"; ctx.fillText(lab.toUpperCase(), X+4, a.top+12); ctx.restore(); });
+}};
+const chart = new Chart($("chart"),{type:"line",plugins:[marksPlugin],data:{labels:[],datasets:[
+  {label:"Water level",data:[],borderColor:"#1c7fb5",backgroundColor:"rgba(28,127,181,.2)",fill:true,tension:.2,pointRadius:0,borderWidth:2},
+  {label:"LOW (69 cm)",data:[],borderColor:"#e6b800",borderDash:[6,4],pointRadius:0,borderWidth:1},
+  {label:"MODERATE (54 cm)",data:[],borderColor:"#f07a00",borderDash:[6,4],pointRadius:0,borderWidth:1},
+  {label:"HIGH (39 cm)",data:[],borderColor:"#d62839",borderDash:[6,4],pointRadius:0,borderWidth:1}]},
+  options:{responsive:false,maintainAspectRatio:false,animation:false,scales:{y:{min:0,max:4,ticks:{stepSize:1,display:false},title:{display:false}},x:{ticks:{maxRotation:0,autoSkipPadding:40}}},interaction:{mode:"index",intersect:false},plugins:{tooltip:{filter:i=>i.datasetIndex===0,callbacks:{label:i=>{const d=400-pts[i.dataIndex][1];return `${d} cm to water (${["Normal","LOW","MODERATE","HIGH"][d<=39?3:d<=54?2:d<=69?1:0]})`;}}},legend:{position:"bottom",labels:{color:"#333333"}}}}});
+
+const band = d => d >= 69 ? (400-d)/331 : d >= 54 ? 1 + (69-d)/15 : d >= 39 ? 2 + (54-d)/15 : 3 + (39-d)/39;
+function drawChart(){
+  const w = $("wrap"), atEnd = w.scrollLeft + w.clientWidth >= w.scrollWidth - 30;
+  chart.data.labels = pts.map(p => dt(p[0]) + " " + tm(p[0]));
+  // every band (Normal, LOW, MODERATE, HIGH) gets the same height on the chart
+  chart.data.datasets[0].data = pts.map(p => band(400 - p[1]));
+  [1,2,3].forEach(i => chart.data.datasets[i].data = pts.map(() => i));
+  chart.resize(Math.max(w.clientWidth - 80, pts.length * 10), 280);
+  chart.update();
+  // distance labels that stay at the left while the chart scrolls
+  const ys = chart.scales && chart.scales.y;
+  if(ys) $("yax").innerHTML = "<em>CM</em>" + [[0,"400",""],[1,"69","LOW"],[2,"54","MOD"],[3,"39","HIGH"],[4,"0",""]].map(([v,t,n],i) =>
+    `<span style="top:${Math.min(272, Math.max(22, ys.getPixelForValue(v)))}px${i>0&&i<4?";color:"+COL[i]:""}">${n?`<i>${n}</i>`:""}${t}</span>`).join("");
+  if(atEnd) w.scrollLeft = w.scrollWidth;
+}
+function point(d){
+  const h = 400 - d, now = Date.now(), last = pts[pts.length-1];
+  if(last && h === lastH && now - lastT < 10000) return;
+  let lab = null;
+  if(!last) lab = "Started";
+  else if(now - last[0] > 30000){ if(!/Stopped/.test(last[2]||"")) last[2] = (last[2]?last[2]+" / ":"")+"Stopped"; lab = "Started"; }
+  lastH = h; lastT = now;
+  pts.push(lab ? [now,h,lab] : [now,h]);
+  if(pts.length > 2000) pts = pts.slice(-2000);
+  sv("fews_chart", pts);
+  drawChart();
+}
+
+// ---------- flood map (embedded) ----------
+const MAP_SRC = "PCFET0NUWVBFIGh0bWw+CjxodG1sIGxhbmc9ImVuIj4KPGhlYWQ+CjxtZXRhIGNoYXJzZXQ9InV0Zi04Ij4KPG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCwgaW5pdGlhbC1zY2FsZT0xIj4KPHRpdGxlPlBhd2EgRmxvb2QgTWFwPC90aXRsZT4KPGxpbmsgaHJlZj0iaHR0cHM6Ly9mb250cy5nb29nbGVhcGlzLmNvbS9jc3MyP2ZhbWlseT1CYXJsb3c6d2dodEA0MDA7NjAwJmZhbWlseT1CYXJsb3crQ29uZGVuc2VkOndnaHRANjAwOzgwMCZkaXNwbGF5PXN3YXAiIHJlbD0ic3R5bGVzaGVldCI+CjxsaW5rIHJlbD0ic3R5bGVzaGVldCIgaHJlZj0iaHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L25wbS9sZWFmbGV0QDEuOS40L2Rpc3QvbGVhZmxldC5jc3MiPgo8c2NyaXB0IHNyYz0iaHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L25wbS9sZWFmbGV0QDEuOS40L2Rpc3QvbGVhZmxldC5qcyI+PC9zY3JpcHQ+CjxzY3JpcHQgc3JjPSJodHRwczovL2Nkbi5qc2RlbGl2ci5uZXQvbnBtL21xdHRANS4xMC4xL2Rpc3QvbXF0dC5taW4uanMiPjwvc2NyaXB0Pgo8c3R5bGU+Cjpyb290ey0tYmc6I2U4ZjFmNTstLWNhcmQ6I2ZmZjstLWluazojMGIyYTNjOy0tbXV0ZTojNTg3MDgwOy0tbGluZTojYzdkNmRlOy0td2F0ZXI6IzFjN2ZiNTstLWwxOiNlNmI4MDA7LS1sMjojZjA3YTAwOy0tbDM6I2Q2MjgzOTstLWxiOiM0ZmIzZTg7LS1vazojMWY5ZDU1fQoqe2JveC1zaXppbmc6Ym9yZGVyLWJveH0KaHRtbCxib2R5e2hlaWdodDoxMDAlO21hcmdpbjowfQpib2R5e2ZvbnQ6MTVweC8xLjQ1IEJhcmxvdyxzeXN0ZW0tdWksc2Fucy1zZXJpZjtjb2xvcjp2YXIoLS1pbmspO2JhY2tncm91bmQ6dmFyKC0tYmcpfQojYXBwe2Rpc3BsYXk6Z3JpZDtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MzQwcHggbWlubWF4KDAsMWZyKTtoZWlnaHQ6MTAwJX0KYXNpZGV7YmFja2dyb3VuZDp2YXIoLS1jYXJkKTtib3JkZXItcmlnaHQ6MnB4IHNvbGlkIHZhcigtLWluayk7b3ZlcmZsb3cteTphdXRvO2Rpc3BsYXk6ZmxleDtmbGV4LWRpcmVjdGlvbjpjb2x1bW59Ci5oZHtiYWNrZ3JvdW5kOnZhcigtLWluayk7Y29sb3I6I2ZmZjtwYWRkaW5nOjE2cHggMThweH0KaDF7Zm9udDo4MDAgMjRweCAiQmFybG93IENvbmRlbnNlZCIsc2Fucy1zZXJpZjtsZXR0ZXItc3BhY2luZzouMDhlbTt0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7bWFyZ2luOjB9Ci5oZCBwe21hcmdpbjoycHggMCAwO2NvbG9yOiNiNWNiZDc7Zm9udC1zaXplOjEzcHg7bGV0dGVyLXNwYWNpbmc6LjA0ZW19CnNlY3Rpb257cGFkZGluZzoxNHB4IDE4cHg7Ym9yZGVyLWJvdHRvbToxcHggc29saWQgdmFyKC0tbGluZSl9Cmgye2ZvbnQ6ODAwIDE1cHggIkJhcmxvdyBDb25kZW5zZWQiLHNhbnMtc2VyaWY7bGV0dGVyLXNwYWNpbmc6LjEyZW07dGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlO21hcmdpbjowIDAgMTBweH0KLnJvd3tkaXNwbGF5OmZsZXg7Z2FwOjEwcHg7YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpzcGFjZS1iZXR3ZWVuO2ZsZXgtd3JhcDp3cmFwfQouY2hpcHtkaXNwbGF5OmlubGluZS1ibG9jaztwYWRkaW5nOjNweCAxMHB4O2ZvbnQ6ODAwIDEzcHggIkJhcmxvdyBDb25kZW5zZWQiLHNhbnMtc2VyaWY7bGV0dGVyLXNwYWNpbmc6LjA4ZW07dGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlO2JhY2tncm91bmQ6dmFyKC0tbGIpO2NvbG9yOiMwMDB9Ci5iaWd7Zm9udDo4MDAgMzRweC8xICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmfS5iaWcgc21hbGx7Zm9udDo2MDAgMTRweCBCYXJsb3c7Y29sb3I6dmFyKC0tbXV0ZSl9Ci5tdXRle2NvbG9yOnZhcigtLW11dGUpO2ZvbnQtc2l6ZToxM3B4fQppbnB1dFt0eXBlPXJhbmdlXXt3aWR0aDoxMDAlO2FjY2VudC1jb2xvcjp2YXIoLS13YXRlcil9CmJ1dHRvbntmb250OjgwMCAxM3B4ICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmO2xldHRlci1zcGFjaW5nOi4xZW07dGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlO3BhZGRpbmc6N3B4IDEycHg7Ym9yZGVyOjFweCBzb2xpZCB2YXIoLS1pbmspO2JhY2tncm91bmQ6dmFyKC0taW5rKTtjb2xvcjojZmZmO2N1cnNvcjpwb2ludGVyfQpidXR0b24uYWx0e2JhY2tncm91bmQ6I2ZmZjtjb2xvcjp2YXIoLS1pbmspfWJ1dHRvbi5vbntiYWNrZ3JvdW5kOnZhcigtLWwyKTtib3JkZXItY29sb3I6dmFyKC0tbDIpO2NvbG9yOiNmZmZ9CmJ1dHRvbjpmb2N1cy12aXNpYmxlLGlucHV0OmZvY3VzLXZpc2libGUsc2VsZWN0OmZvY3VzLXZpc2libGV7b3V0bGluZTozcHggc29saWQgdmFyKC0tbDEpO291dGxpbmUtb2Zmc2V0OjJweH0Kc2VsZWN0e2ZvbnQ6aW5oZXJpdDtwYWRkaW5nOjVweCA2cHg7Ym9yZGVyOjFweCBzb2xpZCB2YXIoLS1pbmspO2JhY2tncm91bmQ6I2ZmZn0KbGFiZWwuY2t7ZGlzcGxheTpmbGV4O2dhcDo4cHg7YWxpZ24taXRlbXM6Y2VudGVyO2ZvbnQtc2l6ZToxNHB4O21hcmdpbi10b3A6OHB4fQoubGd7ZGlzcGxheTpncmlkO2dyaWQtdGVtcGxhdGUtY29sdW1uczpyZXBlYXQoOSwxZnIpO2hlaWdodDoxNHB4O2JvcmRlcjoxcHggc29saWQgdmFyKC0taW5rKX0KLmxnbHtkaXNwbGF5OmZsZXg7anVzdGlmeS1jb250ZW50OnNwYWNlLWJldHdlZW47Zm9udC1zaXplOjExcHg7Y29sb3I6dmFyKC0tbXV0ZSk7bWFyZ2luLXRvcDozcHh9Ci5rZXl7ZGlzcGxheTpncmlkO2dhcDo0cHg7bWFyZ2luLXRvcDoxMHB4O2ZvbnQtc2l6ZToxM3B4fS5rZXkgaXtkaXNwbGF5OmlubGluZS1ibG9jazt3aWR0aDoxNHB4O2hlaWdodDoxNHB4O21hcmdpbi1yaWdodDo4cHg7dmVydGljYWwtYWxpZ246LTJweDtib3JkZXI6MXB4IHNvbGlkIHZhcigtLWluayl9CnVse2xpc3Qtc3R5bGU6bm9uZTttYXJnaW46MDtwYWRkaW5nOjB9Cmxpe2Rpc3BsYXk6Z3JpZDtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MjZweCAxZnI7Z2FwOjhweDtwYWRkaW5nOjZweCAwO2JvcmRlci1ib3R0b206MXB4IGRhc2hlZCB2YXIoLS1saW5lKTtmb250LXNpemU6MTNweH0KbGkgYntmb250OjgwMCAxNHB4ICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmO2xldHRlci1zcGFjaW5nOi4wNmVtO3RleHQtdHJhbnNmb3JtOnVwcGVyY2FzZTtkaXNwbGF5OmJsb2NrfQouZG90e3dpZHRoOjI0cHg7aGVpZ2h0OjI0cHg7Ym9yZGVyLXJhZGl1czo1MCU7YmFja2dyb3VuZDp2YXIoLS1pbmspO2NvbG9yOiNmZmY7ZGlzcGxheTpncmlkO3BsYWNlLWl0ZW1zOmNlbnRlcjtmb250OjgwMCAxM3B4ICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmfQoud2V0e2NvbG9yOnZhcigtLWwzKTtmb250LXdlaWdodDo2MDB9CnRleHRhcmVhe3dpZHRoOjEwMCU7aGVpZ2h0OjEyMHB4O2ZvbnQ6MTJweC8xLjQgdWktbW9ub3NwYWNlLG1vbm9zcGFjZTttYXJnaW4tdG9wOjhweDtkaXNwbGF5Om5vbmV9Ci5ub3Rle2ZvbnQtc2l6ZToxMnB4O2NvbG9yOnZhcigtLW11dGUpO3BhZGRpbmc6MTJweCAxOHB4fQojbWFwe2hlaWdodDoxMDAlO2JhY2tncm91bmQ6I2RmZTllZX0KI2VycntkaXNwbGF5Om5vbmU7cG9zaXRpb246YWJzb2x1dGU7ei1pbmRleDoxMDAwO3RvcDoxMnB4O2xlZnQ6NTAlO3RyYW5zZm9ybTp0cmFuc2xhdGVYKC01MCUpO2JhY2tncm91bmQ6dmFyKC0tbDMpO2NvbG9yOiNmZmY7cGFkZGluZzo4cHggMTRweDtmb250LXdlaWdodDo2MDA7bWF4LXdpZHRoOjgwJX0KI3JlYWR7cG9zaXRpb246YWJzb2x1dGU7ei1pbmRleDo5MDA7bGVmdDoxMnB4O2JvdHRvbToyNnB4O2JhY2tncm91bmQ6I2ZmZjtib3JkZXI6MnB4IHNvbGlkIHZhcigtLWluayk7cGFkZGluZzo0cHggMTBweDtmb250OjgwMCAxNHB4ICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmO2xldHRlci1zcGFjaW5nOi4wNmVtfQoubWFwd3JhcHtwb3NpdGlvbjpyZWxhdGl2ZTttaW4td2lkdGg6MH0KLnBpbnt3aWR0aDozMHB4O2hlaWdodDozMHB4O2JvcmRlci1yYWRpdXM6NTAlO2JhY2tncm91bmQ6dmFyKC0taW5rKTtjb2xvcjojZmZmO2JvcmRlcjozcHggc29saWQgI2ZmZjtkaXNwbGF5OmdyaWQ7cGxhY2UtaXRlbXM6Y2VudGVyO2ZvbnQ6ODAwIDE1cHggIkJhcmxvdyBDb25kZW5zZWQiLHNhbnMtc2VyaWY7Ym94LXNoYWRvdzowIDFweCA0cHggcmdiYSgwLDAsMCwuNSl9Ci5waW4uc2Vue2JvcmRlci1yYWRpdXM6NnB4O2JhY2tncm91bmQ6dmFyKC0td2F0ZXIpfQoucGluLm9ubHtib3JkZXItY29sb3I6dmFyKC0tb2spfQoucGluLmxpdHtiYWNrZ3JvdW5kOnZhcigtLWMpO2FuaW1hdGlvbjpwZyAxcyBlYXNlLWluLW91dCBpbmZpbml0ZSBhbHRlcm5hdGV9Ci5waW57cG9zaXRpb246cmVsYXRpdmV9Ci5waW4gc3Bhbntwb3NpdGlvbjpyZWxhdGl2ZTt6LWluZGV4OjF9Ci5waW4ubGl0LmRre2NvbG9yOiMwMDB9Ci5ycHtwb3NpdGlvbjphYnNvbHV0ZTtpbnNldDotM3B4O2JvcmRlci1yYWRpdXM6NTAlO2JvcmRlcjozcHggc29saWQgdmFyKC0tYyk7YmFja2dyb3VuZDp2YXIoLS1jKTtvcGFjaXR5OjA7cG9pbnRlci1ldmVudHM6bm9uZTthbmltYXRpb246cnAgMi40cyBlYXNlLW91dCBpbmZpbml0ZX0KLnJwLnIye2FuaW1hdGlvbi1kZWxheTouOHN9LnJwLnIze2FuaW1hdGlvbi1kZWxheToxLjZzfQpAa2V5ZnJhbWVzIHJwezAle3RyYW5zZm9ybTpzY2FsZSgxKTtvcGFjaXR5Oi43NX03MCV7b3BhY2l0eTouMTh9MTAwJXt0cmFuc2Zvcm06c2NhbGUoNC42KTtvcGFjaXR5OjB9fQoucGxhYntiYWNrZ3JvdW5kOnZhcigtLWluayk7Y29sb3I6I2ZmZjtib3JkZXI6MXB4IHNvbGlkICNmZmY7Ym9yZGVyLXJhZGl1czowO3BhZGRpbmc6MXB4IDdweDtmb250OjgwMCAxMnB4ICJCYXJsb3cgQ29uZGVuc2VkIixzYW5zLXNlcmlmO2xldHRlci1zcGFjaW5nOi4wOGVtO3doaXRlLXNwYWNlOm5vd3JhcDtib3gtc2hhZG93OjAgMXB4IDNweCByZ2JhKDAsMCwwLC41KX0KLnBsYWI6OmJlZm9yZXtkaXNwbGF5Om5vbmV9CkBrZXlmcmFtZXMgcGd7ZnJvbXtib3gtc2hhZG93OjAgMCA2cHggMnB4IHZhcigtLWMpfXRve2JveC1zaGFkb3c6MCAwIDIycHggMTBweCB2YXIoLS1jKX19Ci5mbG9vZGltZ3thbmltYXRpb246ZncgMi40cyBlYXNlLWluLW91dCBpbmZpbml0ZSBhbHRlcm5hdGV9CkBrZXlmcmFtZXMgZnd7ZnJvbXtvcGFjaXR5Oi43OH10b3tvcGFjaXR5Oi45NX19Ci5sZWFmbGV0LWNvbnRhaW5lcntmb250OjEzcHggQmFybG93LHN5c3RlbS11aSxzYW5zLXNlcmlmfQouZ3JheXtmaWx0ZXI6Z3JheXNjYWxlKDEpIGNvbnRyYXN0KDEuMDUpfQouZW1iIC5oZHtkaXNwbGF5Om5vbmV9CkBtZWRpYShwcmVmZXJzLXJlZHVjZWQtbW90aW9uOnJlZHVjZSl7LnBpbi5saXQsLmZsb29kaW1ne2FuaW1hdGlvbjpub25lfS5ycHthbmltYXRpb246bm9uZTtvcGFjaXR5Oi4zO3RyYW5zZm9ybTpzY2FsZSgyLjIpfX0KQG1lZGlhKG1heC13aWR0aDo4MDBweCl7I2FwcHtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyO2dyaWQtdGVtcGxhdGUtcm93czphdXRvIDYwdmh9YXNpZGV7Ym9yZGVyLXJpZ2h0OjA7Ym9yZGVyLWJvdHRvbToycHggc29saWQgdmFyKC0taW5rKTttYXgtaGVpZ2h0Om5vbmV9fQo8L3N0eWxlPgo8L2hlYWQ+Cjxib2R5Pgo8ZGl2IGlkPSJhcHAiPgogIDxhc2lkZT4KICAgIDxkaXYgY2xhc3M9ImhkIj48aDE+UGF3YSBmbG9vZCBtYXA8L2gxPjxwPkJBUkFOR0FZIFBBV0EsIE1BVE5PRywgU09SU09HT048L3A+PC9kaXY+CgogICAgPHNlY3Rpb24+CiAgICAgIDxoMj5MaXZlIHNlbnNvcjwvaDI+CiAgICAgIDxkaXYgY2xhc3M9InJvdyI+PGRpdiBjbGFzcz0iYmlnIj48c3BhbiBpZD0iZGlzdCI+4oCTPC9zcGFuPiA8c21hbGw+Y20gdG8gd2F0ZXI8L3NtYWxsPjwvZGl2PjxzcGFuIGlkPSJsdmwiIGNsYXNzPSJjaGlwIj5ObyBkYXRhPC9zcGFuPjwvZGl2PgogICAgICA8ZGl2IGNsYXNzPSJtdXRlIiBpZD0iY29ubiI+Q29ubmVjdGluZyB0byB0aGUgYnJva2Vy4oCmPC9kaXY+CiAgICA8L3NlY3Rpb24+CgogICAgPHNlY3Rpb24+CiAgICAgIDxoMj5GbG9vZCBzaW11bGF0aW9uPC9oMj4KICAgICAgPGRpdiBjbGFzcz0icm93Ij48c3Bhbj5XYXRlciByaXNlIGFib3ZlIHRoZSByaXZlcjwvc3Bhbj48YiBpZD0icmlzZVYiPjAuMCBtPC9iPjwvZGl2PgogICAgICA8aW5wdXQgaWQ9InJpc2UiIHR5cGU9InJhbmdlIiBtaW49IjAiIG1heD0iNSIgc3RlcD0iMC4xIiB2YWx1ZT0iMCIgYXJpYS1sYWJlbD0iV2F0ZXIgcmlzZSBpbiBtZXRyZXMiPgogICAgICA8ZGl2IGNsYXNzPSJyb3ciIHN0eWxlPSJtYXJnaW4tdG9wOjhweCI+PHNwYW4+PGJ1dHRvbiBpZD0icGxheSI+UGxheTwvYnV0dG9uPiA8YnV0dG9uIGlkPSJyZXNldCIgY2xhc3M9ImFsdCI+UmVzZXQ8L2J1dHRvbj48L3NwYW4+PHNwYW4gY2xhc3M9Im11dGUiIGlkPSJhcmVhIj5GbG9vZGVkOiAwIGhhPC9zcGFuPjwvZGl2PgogICAgICA8bGFiZWwgY2xhc3M9ImNrIj48aW5wdXQgdHlwZT0iY2hlY2tib3giIGlkPSJmb2xsb3ciIGNoZWNrZWQ+IEZvbGxvdyB0aGUgbGl2ZSBzZW5zb3I8L2xhYmVsPgogICAgICA8ZGl2IGNsYXNzPSJtdXRlIiBpZD0iZkhpbnQiIHN0eWxlPSJtYXJnaW4tdG9wOjRweCI+PC9kaXY+CiAgICA8L3NlY3Rpb24+CgogICAgPHNlY3Rpb24+CiAgICAgIDxoMj5Hcm91bmQgZWxldmF0aW9uPC9oMj4KICAgICAgPGRpdiBjbGFzcz0ibGciIGlkPSJsZyI+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9ImxnbCI+PHNwYW4+NSBtIChsb3cpPC9zcGFuPjxzcGFuPjIwIG08L3NwYW4+PHNwYW4+NDUgbTwvc3Bhbj48c3Bhbj4xNTAgbSAoaGlnaCk8L3NwYW4+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9InJvdyIgc3R5bGU9Im1hcmdpbi10b3A6MTBweCI+PHNwYW4+Q29sb3Igc3RyZW5ndGg8L3NwYW4+PGIgaWQ9Im9wViI+NzAlPC9iPjwvZGl2PgogICAgICA8aW5wdXQgaWQ9Im9wIiB0eXBlPSJyYW5nZSIgbWluPSIwIiBtYXg9IjEwMCIgc3RlcD0iNSIgdmFsdWU9IjcwIiBhcmlhLWxhYmVsPSJFbGV2YXRpb24gY29sb3Igc3RyZW5ndGgiPgogICAgICA8ZGl2IGNsYXNzPSJrZXkiPjxzcGFuPjxpIHN0eWxlPSJiYWNrZ3JvdW5kOiMxYzdmYjUiPjwvaT5SaXZlciBhbmQgZmxvb2Qgd2F0ZXI8L3NwYW4+PHNwYW4+PGkgc3R5bGU9ImJhY2tncm91bmQ6I2Q2MjgzOSI+PC9pPkZsb29kLXByb25lIHB1cm9rIGFyZWE8L3NwYW4+PC9kaXY+CiAgICA8L3NlY3Rpb24+CgogICAgPHNlY3Rpb24+CiAgICAgIDxoMj5TZW5zb3IgYW5kIGFsYXJtIG5vZGVzPC9oMj4KICAgICAgPGRpdiBjbGFzcz0ibXV0ZSIgc3R5bGU9Im1hcmdpbi1ib3R0b206NnB4Ij5EcmFnIGVhY2ggbWFya2VyIG9uIHRoZSBtYXAgdG8gaXRzIHJlYWwgcGxhY2UuPC9kaXY+CiAgICAgIDx1bCBpZD0ibGlzdCI+PC91bD4KICAgIDwvc2VjdGlvbj4KCiAgICA8c2VjdGlvbj4KICAgICAgPGgyPlJpdmVyPC9oMj4KICAgICAgPGRpdiBjbGFzcz0icm93Ij48YnV0dG9uIGlkPSJkcmF3UiIgY2xhc3M9ImFsdCI+RHJhdyByaXZlcjwvYnV0dG9uPjxzcGFuPjxidXR0b24gaWQ9InVuZG9SIiBjbGFzcz0iYWx0Ij5VbmRvIHBvaW50PC9idXR0b24+IDxidXR0b24gaWQ9ImNsZWFyUiIgY2xhc3M9ImFsdCI+Q2xlYXI8L2J1dHRvbj48L3NwYW4+PC9kaXY+CiAgICAgIDxkaXYgY2xhc3M9Im11dGUiIHN0eWxlPSJtYXJnaW4tdG9wOjZweCIgaWQ9InJIaW50Ij48L2Rpdj4KICAgIDwvc2VjdGlvbj4KCiAgICA8c2VjdGlvbj4KICAgICAgPGgyPk90aGVyIGZsb29kLXByb25lIGFyZWFzPC9oMj4KICAgICAgPGRpdiBjbGFzcz0icm93Ij48c3Bhbj5TaXplIDxzZWxlY3QgaWQ9InJhZCI+PG9wdGlvbiB2YWx1ZT0iNTAiPjUwIG08L29wdGlvbj48b3B0aW9uIHZhbHVlPSIxMDAiIHNlbGVjdGVkPjEwMCBtPC9vcHRpb24+PG9wdGlvbiB2YWx1ZT0iMTUwIj4xNTAgbTwvb3B0aW9uPjxvcHRpb24gdmFsdWU9IjI1MCI+MjUwIG08L29wdGlvbj48L3NlbGVjdD48L3NwYW4+PGJ1dHRvbiBpZD0iYWRkWiIgY2xhc3M9ImFsdCI+QWRkIGFyZWE8L2J1dHRvbj48L2Rpdj4KICAgICAgPGRpdiBjbGFzcz0ibXV0ZSIgc3R5bGU9Im1hcmdpbi10b3A6NnB4IiBpZD0iekhpbnQiPkNsaWNrICJBZGQgYXJlYSIsIHRoZW4gY2xpY2sgdGhlIG1hcC4gQ2xpY2sgYW4gYXJlYSB0byByZW1vdmUgaXQuPC9kaXY+CiAgICA8L3NlY3Rpb24+CgogICAgPHNlY3Rpb24+CiAgICAgIDxkaXYgY2xhc3M9InJvdyI+PGJ1dHRvbiBpZD0iY29weSI+Q29weSBwb3NpdGlvbnM8L2J1dHRvbj48YnV0dG9uIGlkPSJyZXNldFBvcyIgY2xhc3M9ImFsdCI+UmVzZXQgcG9zaXRpb25zPC9idXR0b24+PC9kaXY+CiAgICAgIDx0ZXh0YXJlYSBpZD0ib3V0IiByZWFkb25seSBhcmlhLWxhYmVsPSJQb3NpdGlvbnMiPjwvdGV4dGFyZWE+CiAgICA8L3NlY3Rpb24+CgogICAgPHAgY2xhc3M9Im5vdGUiPlRoZSBmbG9vZCBpcyBhbiBpbGx1c3RyYXRpdmUgc2ltdWxhdGlvbi4gV2F0ZXIgbGVhdmVzIHRoZSByaXZlciBhbG9uZyBhIHBhdGggdG8gZWFjaCBvZiB0aGUgZml2ZSBwdXJvayBhcmVhcywgYXMgcmVwb3J0ZWQgbG9jYWxseSwgYW5kIHRoZW4gZ3Jvd3Mgb3V0d2FyZCBhcm91bmQgdGhlbS4gSGlnaGVyIGdyb3VuZCBnZXRzIHdldCBsYXRlciwgdXNpbmcgb3BlbiBlbGV2YXRpb24gZGF0YS4gSXQgaXMgbm90IGFuIG9mZmljaWFsIGZsb29kIGhhemFyZCBtYXAuPGJyPkVsZXZhdGlvbjogTWFwemVuIFRlcnJhaW4gVGlsZXMgb24gQVdTIChTUlRNKS4gQmFzZSBtYXAgYW5kIGltYWdlcnk6IEVzcmkuPC9wPgogIDwvYXNpZGU+CiAgPGRpdiBjbGFzcz0ibWFwd3JhcCI+PGRpdiBpZD0ibWFwIj48L2Rpdj48ZGl2IGlkPSJlcnIiPjwvZGl2PjxkaXYgaWQ9InJlYWQiPk1vdmUgb3ZlciB0aGUgbWFwIGZvciBlbGV2YXRpb248L2Rpdj48L2Rpdj4KPC9kaXY+Cgo8c2NyaXB0Pgpjb25zdCBIT1NUID0gIndzczovLzU0NzEzOTE3YWE4ZTRlZGFhMjQwMTRlMzhlZWFhYWI2LnMxLmV1LmhpdmVtcS5jbG91ZDo4ODg0L21xdHQiOwpjb25zdCBVU0VSID0gIkRhc2hib2FyZCIsIFBBU1MgPSAiRGFyS0tuaWdodCI7CmNvbnN0IEJBU0UgPSAiZmxvb2R3YXJuaW5nL2xlYnJvbmphbWVzMTAyMzI2LyI7CmNvbnN0IENFTlRFUiA9IFsxMi42MTMxLCAxMjQuMDU2N107CmNvbnN0IENPTCA9IHsxOiJ2YXIoLS1sMSkiLCAyOiJ2YXIoLS1sMikiLCAzOiJ2YXIoLS1sMykifTsKY29uc3QgS0VZUyA9IFsiUyIsIjEiLCIyIiwiMyIsIjQiLCI1Il07Ci8vIFB1cm9rIGxhYmVsIG9mIGVhY2ggYWxhcm0gbm9kZSAoY2hhbmdlIHRoZSB0ZXh0IGhlcmUgaWYgYSBuYW1lIGlzIHdyb25nKQpjb25zdCBQVVJPSyA9IHsxOiJQVVJPSyAzIC0gQkFZQUJBUyIsIDI6IlBVUk9LIDIgLSBTQUdJTkciLCAzOiJQVVJPSyA0IC0gU0FOVE9MIiwgNDoiUFVST0sgMSAtIE1BTkdHQSIsIDU6IlBVUk9LIDUgLSBQScORQSJ9Owpjb25zdCBOQU1FID0gayA9PiBrPT09IlMiID8gIldhdGVyIGxldmVsIHNlbnNvciIgOiBgJHtQVVJPS1trXX0gKEFsYXJtIE5vZGUgJHtrfSlgOwpjb25zdCAkID0gaWQgPT4gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoaWQpOwoKLy8gLS0tLS0tLS0tLSBzYXZlZCBwb3NpdGlvbnMgLS0tLS0tLS0tLQpjb25zdCBERUYgPSB7UzpbMTIuNjEzODUsMTI0LjA1NDRdLCAxOlsxMi42MTE2MSwxMjQuMDU1NzddLCAyOlsxMi42MTUxOSwxMjQuMDUyMjNdLCAzOlsxMi42MDc2MSwxMjQuMDU3MjVdLCA0OlsxMi42MTYxMSwxMjQuMDQ4OTFdLCA1OlsxMi42MDczNiwxMjQuMDYzMDJdLCB6b25lczpbXSwKICByaXZlcjpbWzEyLjYxNzI2NiwgMTI0LjA1Mzg5OV0sIFsxMi42MTY3MTYsIDEyNC4wNTM1NDldLCBbMTIuNjE1OTE2LCAxMjQuMDUzNjZdLCBbMTIuNjE1MjYyLCAxMjQuMDUzOTAxXSwgWzEyLjYxNDU1MSwgMTI0LjA1NDI2XSwgWzEyLjYxMzgyNSwgMTI0LjA1NDY4XSwgWzEyLjYxMzExOSwgMTI0LjA1NTI4Ml0sIFsxMi42MTI1OCwgMTI0LjA1NTg1M10sIFsxMi42MTE5OTQsIDEyNC4wNTY0NDZdLCBbMTIuNjExMjAyLCAxMjQuMDU2NjIxXSwgWzEyLjYxMDY2NywgMTI0LjA1NzAyNl0sIFsxMi42MDk5MjgsIDEyNC4wNTcyNTRdLCBbMTIuNjA5Mzk3LCAxMjQuMDU3NDk0XSwgWzEyLjYwODkzLCAxMjQuMDU3NjU2XSwgWzEyLjYwODgzNiwgMTI0LjA1ODM2M10sIFsxMi42MDgzOTIsIDEyNC4wNTg4NTFdLCBbMTIuNjA3NzU3LCAxMjQuMDU4OTQ3XSwgWzEyLjYwNzMyMywgMTI0LjA1OTc3Ml0sIFsxMi42MDY5NTgsIDEyNC4wNjA2NzNdLCBbMTIuNjA2NTQ4LCAxMjQuMDYxNzQ5XSwgWzEyLjYwNjM4NywgMTI0LjA2MjYxNl0sIFsxMi42MDYwMSwgMTI0LjA2Mzk0M10sIFsxMi42MDU4NDQsIDEyNC4wNjUwMTZdXX07CmNvbnN0IGNsb25lID0gbyA9PiBKU09OLnBhcnNlKEpTT04uc3RyaW5naWZ5KG8pKTsKbGV0IFMgPSBjbG9uZShERUYpOwp0cnkgeyBPYmplY3QuYXNzaWduKFMsIEpTT04ucGFyc2UobG9jYWxTdG9yYWdlLmdldEl0ZW0oInBhd2FfbWFwX3YyIikgfHwgInt9IikpOyB9IGNhdGNoKGUpIHt9CmNvbnN0IHNhdmUgPSAoKSA9PiB7IHRyeSB7IGxvY2FsU3RvcmFnZS5zZXRJdGVtKCJwYXdhX21hcF92MiIsIEpTT04uc3RyaW5naWZ5KFMpKTsgfSBjYXRjaChlKSB7fSB9OwoKLy8gLS0tLS0tLS0tLSBtYXAgLS0tLS0tLS0tLQpjb25zdCBtYXAgPSBMLm1hcCgibWFwIiwge2NlbnRlcjpbMTIuNjExNywxMjQuMDU3NV0sIHpvb206MTUsIG1pblpvb206MTMsIG1heFpvb206MTgsIG1heEJvdW5kczpbWzEyLjU2LDEyNC4wMF0sWzEyLjY3LDEyNC4xMV1dLCB6b29tQ29udHJvbDp0cnVlfSk7Cm1hcC5jcmVhdGVQYW5lKCJlbGV2Iikuc3R5bGUuekluZGV4ID0gMjUwOwptYXAuY3JlYXRlUGFuZSgiZmxvb2QiKS5zdHlsZS56SW5kZXggPSAzMDA7Ci8vIEJhc2UgbWFwcyB0aGF0IG5lZWQgbm8gQVBJIGtleS4gSWYgdGhlIHN0cmVldCBtYXAgZmFpbHMsIE9wZW5TdHJlZXRNYXAgaXMgdHJpZWQgaW5zdGVhZC4KY29uc3QgRVNSSSA9ICJodHRwczovL3NlcnZlci5hcmNnaXNvbmxpbmUuY29tL0FyY0dJUy9yZXN0L3NlcnZpY2VzLyI7CmNvbnN0IHN0cmVldHMgPSBMLnRpbGVMYXllcihFU1JJICsgIldvcmxkX1N0cmVldF9NYXAvTWFwU2VydmVyL3RpbGUve3p9L3t5fS97eH0iLCB7bWF4TmF0aXZlWm9vbToxNywgbWF4Wm9vbToxOSwgY2xhc3NOYW1lOiJncmF5IiwgYXR0cmlidXRpb246IkJhc2UgbWFwOiBFc3JpIn0pOwpjb25zdCBzYXQgPSBMLnRpbGVMYXllcihFU1JJICsgIldvcmxkX0ltYWdlcnkvTWFwU2VydmVyL3RpbGUve3p9L3t5fS97eH0iLCB7bWF4TmF0aXZlWm9vbToxNywgbWF4Wm9vbToxOSwgYXR0cmlidXRpb246IkltYWdlcnk6IEVzcmkifSkuYWRkVG8obWFwKTsKY29uc3Qgb3NtID0gTC50aWxlTGF5ZXIoImh0dHBzOi8vdGlsZS5vcGVuc3RyZWV0bWFwLm9yZy97en0ve3h9L3t5fS5wbmciLCB7bWF4TmF0aXZlWm9vbToxOCwgbWF4Wm9vbToxOSwgY2xhc3NOYW1lOiJncmF5IiwgYXR0cmlidXRpb246IsKpIE9wZW5TdHJlZXRNYXAgY29udHJpYnV0b3JzIn0pOwpsZXQgZmVsbEJhY2sgPSBmYWxzZTsKc3RyZWV0cy5vbigidGlsZWVycm9yIiwgKCkgPT4geyBpZihmZWxsQmFjaykgcmV0dXJuOyBmZWxsQmFjayA9IHRydWU7IGlmKG1hcC5oYXNMYXllcihzdHJlZXRzKSl7IG1hcC5yZW1vdmVMYXllcihzdHJlZXRzKTsgb3NtLmFkZFRvKG1hcCk7IH0gfSk7CgovLyAtLS0tLS0tLS0tIGVsZXZhdGlvbiB0aWxlcyAoVGVycmFyaXVtIGZvcm1hdCkgLS0tLS0tLS0tLQpjb25zdCBjYWNoZSA9IG5ldyBNYXAoKSwgZG9uZSA9IG5ldyBNYXAoKTsKZnVuY3Rpb24gc2hvd0Vycih0KXsgY29uc3QgZSA9ICQoImVyciIpOyBlLnRleHRDb250ZW50ID0gdDsgZS5zdHlsZS5kaXNwbGF5ID0gImJsb2NrIjsgfQpmdW5jdGlvbiBsb2FkRWxldih6LCB4LCB5KXsKICBjb25zdCBrZXkgPSB6KyIvIit4KyIvIit5OwogIGlmKGNhY2hlLmhhcyhrZXkpKSByZXR1cm4gY2FjaGUuZ2V0KGtleSk7CiAgY29uc3QgcCA9IG5ldyBQcm9taXNlKChyZXMsIHJlaikgPT4gewogICAgY29uc3QgaW0gPSBuZXcgSW1hZ2UoKTsKICAgIGltLmNyb3NzT3JpZ2luID0gImFub255bW91cyI7CiAgICBpbS5vbmxvYWQgPSAoKSA9PiB7CiAgICAgIHRyeSB7CiAgICAgICAgY29uc3QgYyA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoImNhbnZhcyIpOyBjLndpZHRoID0gYy5oZWlnaHQgPSAyNTY7CiAgICAgICAgY29uc3QgZyA9IGMuZ2V0Q29udGV4dCgiMmQiLCB7d2lsbFJlYWRGcmVxdWVudGx5OnRydWV9KTsKICAgICAgICBnLmRyYXdJbWFnZShpbSwgMCwgMCk7CiAgICAgICAgY29uc3QgZCA9IGcuZ2V0SW1hZ2VEYXRhKDAsIDAsIDI1NiwgMjU2KS5kYXRhLCBlID0gbmV3IEZsb2F0MzJBcnJheSg2NTUzNik7CiAgICAgICAgZm9yKGxldCBpID0gMDsgaSA8IDY1NTM2OyBpKyspIGVbaV0gPSBkW2kqNF0qMjU2ICsgZFtpKjQrMV0gKyBkW2kqNCsyXS8yNTYgLSAzMjc2ODsKICAgICAgICBkb25lLnNldChrZXksIGUpOyByZXMoZSk7CiAgICAgIH0gY2F0Y2goZXJyKXsgcmVqKGVycik7IH0KICAgIH07CiAgICBpbS5vbmVycm9yID0gKCkgPT4gcmVqKG5ldyBFcnJvcigidGlsZSIpKTsKICAgIGltLnNyYyA9IGBodHRwczovL3MzLmFtYXpvbmF3cy5jb20vZWxldmF0aW9uLXRpbGVzLXByb2QvdGVycmFyaXVtLyR7en0vJHt4fS8ke3l9LnBuZ2A7CiAgfSk7CiAgY2FjaGUuc2V0KGtleSwgcCk7CiAgcmV0dXJuIHA7Cn0KCi8vIHN0cm9uZ2VyIGNvbG9ycywgdHVuZWQgdG8gUGF3YSdzIHJhbmdlIChhYm91dCA1IG0gdG8gMTUwIG0pCmNvbnN0IFNUT1BTID0gW1s1LFsyNiwxNTIsODBdXSxbMTAsWzEwMiwxODksOTldXSxbMTUsWzE2NiwyMTcsMTA2XV0sWzIwLFsyMTcsMjM5LDEzOV1dLFszMCxbMjU1LDIyNCwxMzhdXSxbNDUsWzI0MiwxNzgsOTRdXSxbNjUsWzIwMSwxMzQsNzRdXSxbOTAsWzE1Niw5OCw1Nl1dLFsxNTAsWzExMCw2OCw0MF1dXTsKY29uc3QgTFVUID0gbmV3IFVpbnQ4QXJyYXkoNTAxKjMpOwpmb3IobGV0IGkgPSAwOyBpIDw9IDUwMDsgaSsrKXsKICBjb25zdCBlID0gaS8yOyBsZXQgayA9IDA7CiAgd2hpbGUoayA8IFNUT1BTLmxlbmd0aC0yICYmIGUgPiBTVE9QU1trKzFdWzBdKSBrKys7CiAgY29uc3QgYSA9IFNUT1BTW2tdLCBiID0gU1RPUFNbaysxXSwgdCA9IE1hdGgubWF4KDAsIE1hdGgubWluKDEsIChlLWFbMF0pLyhiWzBdLWFbMF0pKSk7CiAgZm9yKGxldCBjID0gMDsgYyA8IDM7IGMrKykgTFVUW2kqMytjXSA9IGFbMV1bY10gKyAoYlsxXVtjXS1hWzFdW2NdKSp0Owp9CiQoImxnIikuaW5uZXJIVE1MID0gU1RPUFMubWFwKHMgPT4gYDxzcGFuIHN0eWxlPSJiYWNrZ3JvdW5kOnJnYigke3NbMV0uam9pbigiLCIpfSkiPjwvc3Bhbj5gKS5qb2luKCIiKTsKCmZ1bmN0aW9uIHBhaW50KGN2LCBlLCB6KXsKICBjb25zdCBnID0gY3YuZ2V0Q29udGV4dCgiMmQiKSwgaW0gPSBnLmNyZWF0ZUltYWdlRGF0YSgyNTYsIDI1NiksIGQgPSBpbS5kYXRhLCBmID0gMC4xNiAqIE1hdGgucG93KDIsIHotMTUpOwogIGZvcihsZXQgeSA9IDA7IHkgPCAyNTY7IHkrKykgZm9yKGxldCB4ID0gMDsgeCA8IDI1NjsgeCsrKXsKICAgIGNvbnN0IGkgPSB5KjI1NiArIHgsIHYgPSBlW2ldOwogICAgY29uc3QgYSA9IGVbKHkgPiAwID8geS0xIDogeSkqMjU2ICsgKHggPiAwID8geC0xIDogeCldLCBiID0gZVsoeSA8IDI1NSA/IHkrMSA6IHkpKjI1NiArICh4IDwgMjU1ID8geCsxIDogeCldOwogICAgY29uc3Qgc2ggPSAxIC0gTWF0aC5tYXgoLTAuMywgTWF0aC5taW4oMC40LCAoYS1iKSpmKSk7CiAgICBpZih2IDw9IDApeyBkW2kqNF0gPSAxNTA7IGRbaSo0KzFdID0gMjAzOyBkW2kqNCsyXSA9IDIzMDsgfQogICAgZWxzZSB7IGNvbnN0IHEgPSBNYXRoLm1pbig1MDAsIE1hdGgucm91bmQodioyKSkqMzsgZFtpKjRdID0gTWF0aC5taW4oMjU1LCBMVVRbcV0qc2gpOyBkW2kqNCsxXSA9IE1hdGgubWluKDI1NSwgTFVUW3ErMV0qc2gpOyBkW2kqNCsyXSA9IE1hdGgubWluKDI1NSwgTFVUW3ErMl0qc2gpOyB9CiAgICBkW2kqNCszXSA9IDI1NTsKICB9CiAgZy5wdXRJbWFnZURhdGEoaW0sIDAsIDApOwp9Cgpjb25zdCBFbGV2ID0gTC5HcmlkTGF5ZXIuZXh0ZW5kKHsKICBjcmVhdGVUaWxlKGNvb3JkcywgY2IpewogICAgY29uc3QgY3YgPSBMLkRvbVV0aWwuY3JlYXRlKCJjYW52YXMiKTsgY3Yud2lkdGggPSBjdi5oZWlnaHQgPSAyNTY7CiAgICBsb2FkRWxldihjb29yZHMueiwgY29vcmRzLngsIGNvb3Jkcy55KS50aGVuKGUgPT4geyBwYWludChjdiwgZSwgY29vcmRzLnopOyBjYihudWxsLCBjdik7IH0pCiAgICAgIC5jYXRjaChlcnIgPT4geyBzaG93RXJyKCJFbGV2YXRpb24gZGF0YSBjb3VsZCBub3QgYmUgbG9hZGVkLiBDaGVjayB0aGUgaW50ZXJuZXQgY29ubmVjdGlvbiwgdGhlbiByZWxvYWQgdGhlIHBhZ2UuIik7IGNiKGVyciwgY3YpOyB9KTsKICAgIHJldHVybiBjdjsKICB9Cn0pOwpjb25zdCBlbGV2TGF5ZXIgPSBuZXcgRWxldih7cGFuZToiZWxldiIsIG1heE5hdGl2ZVpvb206MTUsIG9wYWNpdHk6MC43LCBhdHRyaWJ1dGlvbjoiRWxldmF0aW9uOiBNYXB6ZW4gVGVycmFpbiBUaWxlcyJ9KS5hZGRUbyhtYXApOwpMLmNvbnRyb2wubGF5ZXJzKHsiU2F0ZWxsaXRlIjpzYXQsICJTdHJlZXQgbWFwIjpzdHJlZXRzfSwgeyJFbGV2YXRpb24gY29sb3JzIjplbGV2TGF5ZXJ9LCB7Y29sbGFwc2VkOmZhbHNlLCBwb3NpdGlvbjoidG9wcmlnaHQifSkuYWRkVG8obWFwKTsKJCgib3AiKS5vbmlucHV0ID0gZSA9PiB7IGVsZXZMYXllci5zZXRPcGFjaXR5KGUudGFyZ2V0LnZhbHVlLzEwMCk7ICQoIm9wViIpLnRleHRDb250ZW50ID0gZS50YXJnZXQudmFsdWUgKyAiJSI7IH07CgpmdW5jdGlvbiBlbGV2QXQobGwpewogIGZvcihjb25zdCB6IG9mIFsxNSwgMTQsIDEzXSl7CiAgICBjb25zdCBwID0gbWFwLnByb2plY3QobGwsIHopLCBhID0gZG9uZS5nZXQoeisiLyIrTWF0aC5mbG9vcihwLngvMjU2KSsiLyIrTWF0aC5mbG9vcihwLnkvMjU2KSk7CiAgICBpZihhKSByZXR1cm4gYVsoTWF0aC5mbG9vcihwLnkpICYgMjU1KSoyNTYgKyAoTWF0aC5mbG9vcihwLngpICYgMjU1KV07CiAgfQogIHJldHVybiBudWxsOwp9Cm1hcC5vbigibW91c2Vtb3ZlIiwgZXYgPT4geyBjb25zdCBlID0gZWxldkF0KGV2LmxhdGxuZyk7ICQoInJlYWQiKS50ZXh0Q29udGVudCA9IGUgPT0gbnVsbCA/ICJFbGV2YXRpb246IGxvYWRpbmciIDogYEVsZXZhdGlvbjogJHtlLnRvRml4ZWQoMSl9IG1gOyB9KTsKCi8vIC0tLS0tLS0tLS0gZmxvb2Qgc2ltdWxhdGlvbiAtLS0tLS0tLS0tCi8vIFdhdGVyIHN0YXJ0cyBpbiB0aGUgcml2ZXIuIEl0IHJlYWNoZXMgdGhlIGZpdmUgcHVyb2sgYXJlYXMgZmlyc3QsIHRocm91Z2ggYSBwYXRoIGZyb20KLy8gdGhlIHJpdmVyIHRvIGVhY2ggb25lLCBhbmQgdGhlbiBzcHJlYWRzIG92ZXIgb3RoZXIgbG93IGdyb3VuZCB1c2luZyB0aGUgZWxldmF0aW9uIGRhdGEuCmNvbnN0IE4gPSAzODQ7CmxldCBHID0gbnVsbCwgcmlzZSA9IDAsIG1hc2sgPSBudWxsOwpjb25zdCBmYyA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoImNhbnZhcyIpOyBmYy53aWR0aCA9IGZjLmhlaWdodCA9IE47CmNvbnN0IGZjdHggPSBmYy5nZXRDb250ZXh0KCIyZCIpOwpjb25zdCBCTEFOSyA9ICJkYXRhOmltYWdlL2dpZjtiYXNlNjQsUjBsR09EbGhBUUFCQUFBQUFDSDVCQUVLQUFFQUxBQUFBQUFCQUFFQUFBSUNUQUVBT3c9PSI7CmNvbnN0IG92ZXJsYXkgPSBMLmltYWdlT3ZlcmxheShCTEFOSywgW1sxMi42MCwxMjQuMDRdLFsxMi42MiwxMjQuMDddXSwge3BhbmU6ImZsb29kIiwgY2xhc3NOYW1lOiJmbG9vZGltZyIsIGludGVyYWN0aXZlOmZhbHNlfSkuYWRkVG8obWFwKTsKY29uc3Qgcml2ZXJMaW5lID0gTC5wb2x5bGluZShTLnJpdmVyLCB7Y29sb3I6IiMxYzdmYjUiLCB3ZWlnaHQ6NCwgb3BhY2l0eTowLjk1LCBpbnRlcmFjdGl2ZTpmYWxzZX0pLmFkZFRvKG1hcCk7CmNvbnN0IGhhemFyZCA9IEwubGF5ZXJHcm91cCgpLmFkZFRvKG1hcCk7CgpsZXQgYnVpbGRpbmcgPSAwOwphc3luYyBmdW5jdGlvbiBidWlsZEdyaWQoKXsKICBjb25zdCBteSA9ICsrYnVpbGRpbmc7CiAgY29uc3QgcHRzID0gS0VZUy5tYXAoayA9PiBTW2tdKS5jb25jYXQoUy5yaXZlciksIGxhdHMgPSBwdHMubWFwKHAgPT4gcFswXSksIGxvbnMgPSBwdHMubWFwKHAgPT4gcFsxXSk7CiAgY29uc3QgYyA9IG1hcC5wcm9qZWN0KEwubGF0TG5nKChNYXRoLm1pbiguLi5sYXRzKStNYXRoLm1heCguLi5sYXRzKSkvMiwgKE1hdGgubWluKC4uLmxvbnMpK01hdGgubWF4KC4uLmxvbnMpKS8yKSwgMTQpOwogIGNvbnN0IG94ID0gTWF0aC5mbG9vcihjLngpLU4vMiwgb3kgPSBNYXRoLmZsb29yKGMueSktTi8yLCBUID0ge30sIG5lZWQgPSBuZXcgU2V0KCk7CiAgZm9yKGxldCB0eCA9IG94ID4+IDg7IHR4IDw9IChveCtOLTEpID4+IDg7IHR4KyspIGZvcihsZXQgdHkgPSBveSA+PiA4OyB0eSA8PSAob3krTi0xKSA+PiA4OyB0eSsrKSBuZWVkLmFkZCh0eCsiLyIrdHkpOwogIHRyeSB7CiAgICBhd2FpdCBQcm9taXNlLmFsbChbLi4ubmVlZF0ubWFwKGFzeW5jIGsgPT4geyBjb25zdCBbdHgsIHR5XSA9IGsuc3BsaXQoIi8iKS5tYXAoTnVtYmVyKTsgVFtrXSA9IGF3YWl0IGxvYWRFbGV2KDE0LCB0eCwgdHkpOyB9KSk7CiAgfSBjYXRjaChlKXsgc2hvd0VycigiRWxldmF0aW9uIGRhdGEgY291bGQgbm90IGJlIGxvYWRlZC4gQ2hlY2sgdGhlIGludGVybmV0IGNvbm5lY3Rpb24sIHRoZW4gcmVsb2FkIHRoZSBwYWdlLiIpOyByZXR1cm47IH0KICBpZihteSAhPT0gYnVpbGRpbmcpIHJldHVybjsKICBjb25zdCBlID0gbmV3IEZsb2F0MzJBcnJheShOKk4pOwogIGZvcihsZXQgaiA9IDA7IGogPCBOOyBqKyspIGZvcihsZXQgaSA9IDA7IGkgPCBOOyBpKyspeyBjb25zdCBneCA9IG94K2ksIGd5ID0gb3krajsgZVtqKk4raV0gPSBUWyhneCA+PiA4KSsiLyIrKGd5ID4+IDgpXVsoZ3kgJiAyNTUpKjI1NiArIChneCAmIDI1NSldOyB9CiAgY29uc3QgY2VsbEYgPSBsbCA9PiB7IGNvbnN0IHEgPSBtYXAucHJvamVjdChMLmxhdExuZyhsbCksIDE0KTsgcmV0dXJuIFtxLngtb3gsIHEueS1veV07IH07CiAgY29uc3QgaW5iID0gKGksIGopID0+IGkgPj0gMCAmJiBpIDwgTiAmJiBqID49IDAgJiYgaiA8IE47CgogIC8vIHJpdmVyIGNlbGxzLCBpbiBvcmRlciBhbG9uZyB0aGUgbGluZQogIGNvbnN0IHJjID0gW107CiAgZm9yKGxldCBzID0gMDsgcyA8IFMucml2ZXIubGVuZ3RoLTE7IHMrKyl7CiAgICBjb25zdCBbeDAsIHkwXSA9IGNlbGxGKFMucml2ZXJbc10pLCBbeDEsIHkxXSA9IGNlbGxGKFMucml2ZXJbcysxXSksIG4gPSBNYXRoLm1heCgxLCBNYXRoLmNlaWwoTWF0aC5oeXBvdCh4MS14MCwgeTEteTApKjIpKTsKICAgIGZvcihsZXQgdCA9IDA7IHQgPD0gbjsgdCsrKXsgY29uc3QgaSA9IE1hdGguZmxvb3IoeDArKHgxLXgwKSp0L24pLCBqID0gTWF0aC5mbG9vcih5MCsoeTEteTApKnQvbik7IGlmKGluYihpLCBqKSl7IGNvbnN0IGsgPSBqKk4raTsgaWYocmNbcmMubGVuZ3RoLTFdICE9PSBrKSByYy5wdXNoKGspOyB9IH0KICB9CiAgLy8gcml2ZXIgc3VyZmFjZSBoZWlnaHQ6IGxvd2VzdCBncm91bmQgbmVhcmJ5LCBhbHdheXMgZmFsbGluZyBkb3duc3RyZWFtCiAgY29uc3QgenIgPSByYy5tYXAoayA9PiBlW2tdKSwgem0gPSB6ci5tYXAoKF8sIGkpID0+IHsgbGV0IG0gPSBJbmZpbml0eTsgZm9yKGxldCBrID0gTWF0aC5tYXgoMCwgaS01KTsgayA8PSBNYXRoLm1pbih6ci5sZW5ndGgtMSwgaSs1KTsgaysrKSBtID0gTWF0aC5taW4obSwgenJba10pOyByZXR1cm4gbTsgfSk7CiAgaWYoem0ubGVuZ3RoID4gMSl7CiAgICBjb25zdCBuMTAgPSBNYXRoLm1heCgxLCBNYXRoLmZsb29yKHptLmxlbmd0aC8xMCkpLCBhdiA9IGEgPT4gYS5yZWR1Y2UoKHgsIHkpID0+IHgreSwgMCkvYS5sZW5ndGg7CiAgICBpZihhdih6bS5zbGljZSgwLCBuMTApKSA+PSBhdih6bS5zbGljZSgtbjEwKSkpeyBmb3IobGV0IGkgPSAxOyBpIDwgem0ubGVuZ3RoOyBpKyspIHptW2ldID0gTWF0aC5taW4oem1baV0sIHptW2ktMV0pOyB9CiAgICBlbHNlIHsgZm9yKGxldCBpID0gem0ubGVuZ3RoLTI7IGkgPj0gMDsgaS0tKSB6bVtpXSA9IE1hdGgubWluKHptW2ldLCB6bVtpKzFdKTsgfQogIH0KICAvLyBmb3IgZXZlcnkgY2VsbDogdGhlIG5lYXJlc3Qgcml2ZXIgY2VsbCdzIGhlaWdodCBhbmQgdGhlIGRpc3RhbmNlIHRvIHRoZSByaXZlcgogIGNvbnN0IGJhc2UgPSBuZXcgRmxvYXQzMkFycmF5KE4qTiksIGRpc3QgPSBuZXcgSW50MzJBcnJheShOKk4pLmZpbGwoLTEpLCBxID0gbmV3IEludDMyQXJyYXkoTipOKTsKICBsZXQgaCA9IDAsIHQgPSAwOwogIHJjLmZvckVhY2goKGssIGkpID0+IHsgaWYoZGlzdFtrXSA8IDApeyBkaXN0W2tdID0gMDsgYmFzZVtrXSA9IHptW2ldOyBxW3QrK10gPSBrOyB9IH0pOwogIGNvbnN0IHB1c2ggPSAoaywgZnJvbSkgPT4geyBpZihkaXN0W2tdIDwgMCl7IGRpc3Rba10gPSBkaXN0W2Zyb21dKzE7IGJhc2Vba10gPSBiYXNlW2Zyb21dOyBxW3QrK10gPSBrOyB9IH07CiAgd2hpbGUoaCA8IHQpeyBjb25zdCBrID0gcVtoKytdLCB4ID0gayAlIE4sIHkgPSAoay14KS9OOyBpZih4ID4gMCkgcHVzaChrLTEsIGspOyBpZih4IDwgTi0xKSBwdXNoKGsrMSwgayk7IGlmKHkgPiAwKSBwdXNoKGstTiwgayk7IGlmKHkgPCBOLTEpIHB1c2goaytOLCBrKTsgfQogIC8vIGhkID0gdGhlIHdhdGVyIHJpc2UgKG0pIGF0IHdoaWNoIGVhY2ggY2VsbCBnZXRzIHdldC4KICAvLyBFdmVyeXRoaW5nIGdyb3dzIG91dCBvZiB0aGUgcml2ZXIsIHN0ZXAgYnkgc3RlcCwgc28gbm8gd2F0ZXIgYXBwZWFycyBmcm9tIG5vd2hlcmUuCiAgY29uc3QgQ0VMTCA9IDE1NjU0My4wMzM5MiAqIE1hdGguY29zKFMuU1swXSpNYXRoLlBJLzE4MCkgLyAxNjM4NDsgICAvLyBtZXRyZXMgcGVyIGNlbGwKICBjb25zdCB1cCA9IChkeikgPT4gTWF0aC5taW4oMiwgMC4zKk1hdGgubWF4KDAsIGR6LTEpKTsgICAgICAgICAgICAgICAvLyB1cGhpbGwgZ3JvdW5kIGdldHMgd2V0IGxhdGVyCiAgY29uc3QgaGQgPSBuZXcgRmxvYXQzMkFycmF5KE4qTik7CiAgZm9yKGxldCBpID0gMDsgaSA8IE4qTjsgaSsrKXsKICAgIGNvbnN0IGQgPSBkaXN0W2ldOwogICAgLy8gdGhlIHJpdmVyIGl0c2VsZiwgdGhlbiBhIHNsb3cgc3dlbGxpbmcgb2YgaXRzIGJhbmtzCiAgICBoZFtpXSA9IGQgPCAwID8gOTkgOiBkIDw9IDEgPyAwIDogKGQtMSkqMC4zNSArIHVwKGVbaV0tYmFzZVtpXSk7CiAgfQogIGNvbnN0IGxvdyA9IChpLCBqLCB2KSA9PiB7IGlmKGluYihpLCBqKSl7IGNvbnN0IGsgPSBqKk4raTsgaWYodiA8IGhkW2tdKSBoZFtrXSA9IHY7IH0gfTsKICBbIjEiLCIyIiwiMyIsIjQiLCI1Il0uZm9yRWFjaChrZXkgPT4gewogICAgY29uc3QgW254LCBueV0gPSBjZWxsRihTW2tleV0pLCBuaSA9IE1hdGguZmxvb3IobngpLCBuaiA9IE1hdGguZmxvb3IobnkpOwogICAgaWYoIWluYihuaSwgbmopKSByZXR1cm47CiAgICBsZXQgYmVzdCA9IC0xLCBiZCA9IEluZmluaXR5OwogICAgcmMuZm9yRWFjaChrID0+IHsgY29uc3QgeCA9IGsgJSBOLCB5ID0gKGsteCkvTiwgZCA9ICh4LW54KSooeC1ueCkgKyAoeS1ueSkqKHktbnkpOyBpZihkIDwgYmQpeyBiZCA9IGQ7IGJlc3QgPSBrOyB9IH0pOwogICAgaWYoYmVzdCA8IDApIHJldHVybjsKICAgIC8vIDEpIGEgcGF0aCBvZiB3YXRlciBmcm9tIHRoZSByaXZlciB0byB0aGUgcHVyb2s6IGl0IGNyZWVwcyBhbG9uZyBiZXR3ZWVuIDAuNSBtIGFuZCAxLjAgbSBvZiByaXNlCiAgICBjb25zdCByeCA9IGJlc3QgJSBOLCByeSA9IChiZXN0LXJ4KS9OLCBsZW4gPSBNYXRoLm1heCgxLCBNYXRoLmNlaWwoTWF0aC5zcXJ0KGJkKSoyKSk7CiAgICBmb3IobGV0IHMgPSAwOyBzIDw9IGxlbjsgcysrKXsgY29uc3QgZiA9IHMvbGVuLCBpID0gTWF0aC5yb3VuZChyeCsobngtcngpKmYpLCBqID0gTWF0aC5yb3VuZChyeSsobnktcnkpKmYpLCB2ID0gMC41ICsgMC41KmY7IGZvcihsZXQgZGogPSAtMTsgZGogPD0gMTsgZGorKykgZm9yKGxldCBkaSA9IC0xOyBkaSA8PSAxOyBkaSsrKSBsb3coaStkaSwgaitkaiwgdik7IH0KICAgIC8vIDIpIGZyb20gMS4wIG0gdGhlIHdhdGVyIHBvb2xzIGF0IHRoZSBwdXJvayBhbmQgZ3Jvd3Mgb3V0d2FyZCBpbiBldmVyeSBkaXJlY3Rpb24KICAgIGNvbnN0IGVOID0gZVtuaipOK25pXSwgQSA9IDI2MCwgUiA9IE1hdGguY2VpbChBKjIuMS9DRUxMKTsKICAgIGZvcihsZXQgZGogPSAtUjsgZGogPD0gUjsgZGorKykgZm9yKGxldCBkaSA9IC1SOyBkaSA8PSBSOyBkaSsrKXsKICAgICAgY29uc3QgaSA9IG5pK2RpLCBqID0gbmorZGo7CiAgICAgIGlmKCFpbmIoaSwgaikpIGNvbnRpbnVlOwogICAgICBjb25zdCByID0gTWF0aC5oeXBvdChkaSwgZGopKkNFTEwvQTsKICAgICAgbG93KGksIGosIDEuMCArIHIqciArIHVwKGVbaipOK2ldLWVOKSk7CiAgICB9CiAgfSk7CiAgRyA9IHtveCwgb3ksIGhkLCByY307CiAgb3ZlcmxheS5zZXRCb3VuZHMoTC5sYXRMbmdCb3VuZHMobWFwLnVucHJvamVjdChbb3gsIG95K05dLCAxNCksIG1hcC51bnByb2plY3QoW294K04sIG95XSwgMTQpKSk7CiAgZHJhd0Zsb29kKCk7IGxpc3QoKTsKfQoKZnVuY3Rpb24gZHJhd0Zsb29kKCl7CiAgJCgicmlzZVYiKS50ZXh0Q29udGVudCA9IHJpc2UudG9GaXhlZCgxKSArICIgbSI7CiAgaWYoIUcpIHJldHVybjsKICBjb25zdCBoZCA9IEcuaGQsIG0gPSBuZXcgVWludDhBcnJheShOKk4pLCBxID0gbmV3IEludDMyQXJyYXkoTipOKTsKICBsZXQgaCA9IDAsIHQgPSAwLCBvdXQgPSAwOwogIEcucmMuZm9yRWFjaChrID0+IHsgaWYoIW1ba10peyBtW2tdID0gMTsgcVt0KytdID0gazsgfSB9KTsKICBjb25zdCBnbyA9IGsgPT4geyBpZighbVtrXSAmJiBoZFtrXSA8PSByaXNlKXsgbVtrXSA9IDE7IHFbdCsrXSA9IGs7IGlmKGhkW2tdID4gMCkgb3V0Kys7IH0gfTsKICB3aGlsZShoIDwgdCl7IGNvbnN0IGsgPSBxW2grK10sIHggPSBrICUgTiwgeSA9IChrLXgpL047IGlmKHggPiAwKSBnbyhrLTEpOyBpZih4IDwgTi0xKSBnbyhrKzEpOyBpZih5ID4gMCkgZ28oay1OKTsgaWYoeSA8IE4tMSkgZ28oaytOKTsgfQogIG1hc2sgPSBtOwogIGNvbnN0IGltID0gZmN0eC5jcmVhdGVJbWFnZURhdGEoTiwgTiksIGQgPSBpbS5kYXRhOwogIGZvcihsZXQgaSA9IDA7IGkgPCBOKk47IGkrKykgaWYobVtpXSl7CiAgICBjb25zdCBkcCA9IHJpc2UgLSBoZFtpXSArIChoZFtpXSA9PT0gMCA/IDAuNiA6IDApLCB4ID0gaSAlIE4sIHkgPSAoaS14KS9OLCBlZCA9IE1hdGgubWluKHgsIHksIE4tMS14LCBOLTEteSk7CiAgICBkW2kqNF0gPSAyMDsgZFtpKjQrMV0gPSAxMTggLSBNYXRoLm1pbig0NiwgZHAqMTYpOyBkW2kqNCsyXSA9IDE5MCAtIE1hdGgubWluKDUwLCBkcCoxMik7IGRbaSo0KzNdID0gKDE3NSArIE1hdGgubWluKDcwLCBkcCo0MCkpICogTWF0aC5taW4oMSwgZWQvMTgpOwogIH0KICBmY3R4LnB1dEltYWdlRGF0YShpbSwgMCwgMCk7CiAgb3ZlcmxheS5zZXRVcmwodCA/IGZjLnRvRGF0YVVSTCgpIDogQkxBTkspOwogIGNvbnN0IHJlcyA9IDE1NjU0My4wMzM5MiAqIE1hdGguY29zKFMuU1swXSpNYXRoLlBJLzE4MCkgLyAxNjM4NDsKICAkKCJhcmVhIikudGV4dENvbnRlbnQgPSBgRmxvb2RlZCBvdXRzaWRlIHRoZSByaXZlcjogJHsob3V0KnJlcypyZXMvMTAwMDApLnRvRml4ZWQoMSl9IGhhYDsKICBsaXN0KCk7Cn0KZnVuY3Rpb24gd2V0KGxsKXsKICBpZighRyB8fCAhbWFzaykgcmV0dXJuIGZhbHNlOwogIGNvbnN0IHAgPSBtYXAucHJvamVjdChMLmxhdExuZyhsbCksIDE0KSwgaSA9IE1hdGguZmxvb3IocC54KS1HLm94LCBqID0gTWF0aC5mbG9vcihwLnkpLUcub3k7CiAgcmV0dXJuIGkgPj0gMCAmJiBpIDwgTiAmJiBqID49IDAgJiYgaiA8IE4gJiYgISFtYXNrW2oqTitpXTsKfQovLyBGaW5hbCBsZXZlbHM6IHdhdGVyIHJlYWNoZXMgdGhlIHB1cm9rcyBhdCBMT1cgKDY5IGNtKSwgc3ByZWFkcyBhdCBNT0RFUkFURSAoNTQgY20pLCB3aWRlciBhdCBISUdIICgzOSBjbSkKZnVuY3Rpb24gcmlzZU9mKGQpeyBkID0gTWF0aC5tYXgoMCwgTWF0aC5taW4oNDAwLCBkKSk7CiAgcmV0dXJuIGQgPj0gNjkgPyAoNDAwLWQpLzMzMSA6IGQgPj0gNTQgPyAxICsgKDY5LWQpLzE1KjAuNiA6IGQgPj0gMzkgPyAxLjYgKyAoNTQtZCkvMTUqMC42IDogMi4yICsgKDM5LWQpLzM5KjIuODsgfQpmdW5jdGlvbiBoaW50KCl7ICQoImZIaW50IikudGV4dENvbnRlbnQgPSAkKCJmb2xsb3ciKS5jaGVja2VkID8gIldhdGVyIGZvbGxvd3MgdGhlIHNlbnNvci4gTE9XOiB3YXRlciByZWFjaGVzIHRoZSBwdXJva3MuIE1PREVSQVRFIGFuZCBISUdIOiBpdCBzcHJlYWRzIHdpZGVyLiIgOiAiTWFudWFsIG1vZGUuIFRpY2sgdGhlIGJveCB0byBmb2xsb3cgdGhlIHNlbnNvciBhZ2Fpbi4iOyB9CmxldCByYWYgPSAwOwpmdW5jdGlvbiBzZXRSaXNlKHYpeyBoaW50KCk7IHJpc2UgPSBNYXRoLm1heCgwLCBNYXRoLm1pbig1LCB2KSk7ICQoInJpc2UiKS52YWx1ZSA9IHJpc2U7IGNhbmNlbEFuaW1hdGlvbkZyYW1lKHJhZik7IHJhZiA9IHJlcXVlc3RBbmltYXRpb25GcmFtZShkcmF3Rmxvb2QpOyB9CiQoInJpc2UiKS5vbmlucHV0ID0gZSA9PiB7ICQoImZvbGxvdyIpLmNoZWNrZWQgPSBmYWxzZTsgc3RvcCgpOyBzZXRSaXNlKCtlLnRhcmdldC52YWx1ZSk7IH07CmxldCBhbmltID0gMDsKZnVuY3Rpb24gc3RvcCgpeyBjYW5jZWxBbmltYXRpb25GcmFtZShhbmltKTsgYW5pbSA9IDA7ICQoInBsYXkiKS50ZXh0Q29udGVudCA9ICJQbGF5IjsgfQokKCJwbGF5Iikub25jbGljayA9ICgpID0+IHsKICBpZihhbmltKXsgc3RvcCgpOyByZXR1cm47IH0KICAkKCJmb2xsb3ciKS5jaGVja2VkID0gZmFsc2U7ICQoInBsYXkiKS50ZXh0Q29udGVudCA9ICJTdG9wIjsKICBjb25zdCB0MCA9IHBlcmZvcm1hbmNlLm5vdygpLCBmcm9tID0gcmlzZSA+PSA0Ljk1ID8gMCA6IHJpc2U7CiAgY29uc3Qgc3RlcCA9IG5vdyA9PiB7IGNvbnN0IHYgPSBmcm9tICsgKG5vdy10MCkvMTYwMDAqNTsgc2V0UmlzZSh2KTsgaWYodiA8IDUpIGFuaW0gPSByZXF1ZXN0QW5pbWF0aW9uRnJhbWUoc3RlcCk7IGVsc2Ugc3RvcCgpOyB9OwogIGFuaW0gPSByZXF1ZXN0QW5pbWF0aW9uRnJhbWUoc3RlcCk7Cn07CiQoInJlc2V0Iikub25jbGljayA9ICgpID0+IHsgc3RvcCgpOyBzZXRSaXNlKDApOyB9OwokKCJmb2xsb3ciKS5vbmNoYW5nZSA9IGUgPT4geyBoaW50KCk7IGlmKGUudGFyZ2V0LmNoZWNrZWQgJiYgbGl2ZS5kICE9IG51bGwpeyBzdG9wKCk7IHNldFJpc2UocmlzZU9mKGxpdmUuZCkpOyB9IH07CgovLyAtLS0tLS0tLS0tIG1hcmtlcnMgLS0tLS0tLS0tLQpjb25zdCBsaXZlID0ge2Q6bnVsbCwgTDpudWxsLCBub2Rlczp7fSwgaGVhbHRoOnt9LCBzdGF0Ont9fTsKY29uc3QgbWsgPSB7fTsKZnVuY3Rpb24gaWNvbihrKXsKICBjb25zdCBub3cgPSBEYXRlLm5vdygpLCBuID0gbGl2ZS5ub2Rlc1trXSwgaGwgPSBsaXZlLmhlYWx0aFtrXTsKICBjb25zdCBzID0gbGl2ZS5zdGF0W2tdLCBvZmYgPSBzICYmICFzLm9uICYmICghaGwgfHwgcy50ID49IGhsKTsKICAvLyBhIG5vZGUgdGhhdCBzZW5kcyBzdGF0dXMgYmVhdHMgaXMgb2ZmbGluZSB3aGVuIG5vIGJlYXQgYXJyaXZlZCBmb3IgNiBzZWNvbmRzCiAgY29uc3Qgb24gPSAhb2ZmICYmIChzICYmIHMub24gJiYgcy5uID49IDIgPyBub3ctcy50IDwgNjAwMCA6ICgoaGwgJiYgbm93LWhsIDwgMjUwMDApIHx8IChzICYmIHMub24gJiYgbm93LXMudCA8IDI1MDAwKSB8fCAobiAmJiBub3ctbi50IDwgMjUwMDApKSk7CiAgLy8gYWxlcnQgbGV2ZWw6IHRoZSBub2RlJ3Mgb3duIHJlcG9ydCB3aGVuIGl0IHNlbmRzIG9uZSwgZWxzZSBpdHMgbGFzdCBhY3RpdmF0aW9uCiAgY29uc3QgbHYgPSAhb24gfHwgaz09PSJTIiA/IDAgOiBzICYmIHMub24gJiYgcy5sICE9IG51bGwgPyBzLmwgOiAobiAmJiBub3ctbi50IDwgNjAwMDAgJiYgbGl2ZS5MICE9PSAwID8gbi5sIDogMCk7CiAgY29uc3QgY2xzID0gInBpbiIgKyAoaz09PSJTIiA/ICIgc2VuIiA6ICIiKSArIChvbiA/ICIgb25sIiA6ICIiKSArIChsdiA/ICIgbGl0IiA6ICIiKSArIChsdj09PTEgPyAiIGRrIiA6ICIiKTsKICBjb25zdCB3YXZlcyA9IGx2ID8gJzxpIGNsYXNzPSJycCI+PC9pPjxpIGNsYXNzPSJycCByMiI+PC9pPjxpIGNsYXNzPSJycCByMyI+PC9pPicgOiAiIjsKICByZXR1cm4gTC5kaXZJY29uKHtjbGFzc05hbWU6IiIsIGljb25TaXplOlszMCwzMF0sIGljb25BbmNob3I6WzE1LDE1XSwgaHRtbDpgPGRpdiBjbGFzcz0iJHtjbHN9IiBzdHlsZT0iJHtsdiA/ICItLWM6IitDT0xbbHZdIDogIiJ9Ij4ke3dhdmVzfTxzcGFuPiR7a308L3NwYW4+PC9kaXY+YH0pOwp9CmxldCBzaWcgPSB7fTsKZnVuY3Rpb24gcGlucygpeyBLRVlTLmZvckVhY2goayA9PiB7IGNvbnN0IGljID0gaWNvbihrKSwgaCA9IGljLm9wdGlvbnMuaHRtbDsgaWYoc2lnW2tdICE9PSBoKXsgc2lnW2tdID0gaDsgbWtba10uc2V0SWNvbihpYyk7IH0gfSk7IH0KZnVuY3Rpb24gaGF6YXJkcygpewogIGhhemFyZC5jbGVhckxheWVycygpOwogIFsiMSIsIjIiLCIzIiwiNCIsIjUiXS5mb3JFYWNoKGsgPT4gTC5jaXJjbGUoU1trXSwge3JhZGl1czoxNTAsIGNvbG9yOiIjZDYyODM5Iiwgd2VpZ2h0OjIsIGZpbGxDb2xvcjoiI2Q2MjgzOSIsIGZpbGxPcGFjaXR5OjAuMzIsIGludGVyYWN0aXZlOmZhbHNlfSkuYWRkVG8oaGF6YXJkKSk7Cn0KS0VZUy5mb3JFYWNoKGsgPT4gewogIG1rW2tdID0gTC5tYXJrZXIoU1trXSwge2RyYWdnYWJsZTp0cnVlLCBpY29uOmljb24oayksIHRpdGxlOk5BTUUoayksIGtleWJvYXJkOnRydWUsIHpJbmRleE9mZnNldDprPT09IlMiID8gNTAwIDogMH0pLmFkZFRvKG1hcCk7CiAgaWYoaz09PSJTIikgbWtba10uYmluZFRvb2x0aXAoTkFNRShrKSk7IGVsc2UgbWtba10uYmluZFRvb2x0aXAoUFVST0tba10sIHtwZXJtYW5lbnQ6dHJ1ZSwgZGlyZWN0aW9uOiJib3R0b20iLCBvZmZzZXQ6WzAsMTZdLCBjbGFzc05hbWU6InBsYWIiLCBpbnRlcmFjdGl2ZTpmYWxzZX0pOwogIG1rW2tdLm9uKCJkcmFnZW5kIiwgKCkgPT4geyBjb25zdCBsbCA9IG1rW2tdLmdldExhdExuZygpOyBTW2tdID0gWytsbC5sYXQudG9GaXhlZCg2KSwgK2xsLmxuZy50b0ZpeGVkKDYpXTsgc2F2ZSgpOyBoYXphcmRzKCk7IGJ1aWxkR3JpZCgpOyB9KTsKfSk7CmZ1bmN0aW9uIGxpc3QoKXsKICAkKCJsaXN0IikuaW5uZXJIVE1MID0gS0VZUy5tYXAoayA9PiB7CiAgICBjb25zdCBlID0gZWxldkF0KEwubGF0TG5nKFNba10pKTsKICAgIHJldHVybiBgPGxpPjxzcGFuIGNsYXNzPSJkb3QiIHN0eWxlPSIke2s9PT0iUyIgPyAiYm9yZGVyLXJhZGl1czo1cHg7YmFja2dyb3VuZDp2YXIoLS13YXRlcikiIDogIiJ9Ij4ke2t9PC9zcGFuPjxzcGFuPjxiPiR7TkFNRShrKX08L2I+JHtTW2tdWzBdLnRvRml4ZWQoNSl9LCAke1Nba11bMV0udG9GaXhlZCg1KX0gwrcgZ3JvdW5kICR7ZSA9PSBudWxsID8gIuKApiIgOiBlLnRvRml4ZWQoMSkrIiBtIn0ke2shPT0iUyIgJiYgd2V0KFNba10pID8gJyDCtyA8c3BhbiBjbGFzcz0id2V0Ij53YXRlciBoYXMgcmVhY2hlZCBpdDwvc3Bhbj4nIDogIiJ9PC9zcGFuPjwvbGk+YDsKICB9KS5qb2luKCIiKTsKfQoKLy8gLS0tLS0tLS0tLSByaXZlciBhbmQgb3RoZXIgZmxvb2QtcHJvbmUgYXJlYXMgLS0tLS0tLS0tLQpjb25zdCB6bCA9IEwubGF5ZXJHcm91cCgpLmFkZFRvKG1hcCk7CmxldCBtb2RlID0gbnVsbDsKZnVuY3Rpb24gem9uZXMoKXsKICB6bC5jbGVhckxheWVycygpOwogIFMuem9uZXMuZm9yRWFjaCgoeiwgaSkgPT4gTC5jaXJjbGUoW3pbMF0sIHpbMV1dLCB7cmFkaXVzOnpbMl0sIGNvbG9yOiIjZDYyODM5Iiwgd2VpZ2h0OjIsIGRhc2hBcnJheToiNiA1IiwgZmlsbENvbG9yOiIjZDYyODM5IiwgZmlsbE9wYWNpdHk6MC4xOH0pCiAgICAuYmluZFRvb2x0aXAoIkZsb29kLXByb25lIGFyZWEgKGNsaWNrIHRvIHJlbW92ZSkiKS5vbigiY2xpY2siLCBldiA9PiB7IEwuRG9tRXZlbnQuc3RvcChldik7IGlmKG1vZGUpIHJldHVybjsgUy56b25lcy5zcGxpY2UoaSwgMSk7IHNhdmUoKTsgem9uZXMoKTsgfSkuYWRkVG8oemwpKTsKfQpmdW5jdGlvbiBzZXRNb2RlKG0pewogIG1vZGUgPSBtb2RlID09PSBtID8gbnVsbCA6IG07CiAgJCgiYWRkWiIpLmNsYXNzTGlzdC50b2dnbGUoIm9uIiwgbW9kZSA9PT0gInpvbmUiKTsgJCgiYWRkWiIpLnRleHRDb250ZW50ID0gbW9kZSA9PT0gInpvbmUiID8gIkNsaWNrIHRoZSBtYXAiIDogIkFkZCBhcmVhIjsKICAkKCJkcmF3UiIpLmNsYXNzTGlzdC50b2dnbGUoIm9uIiwgbW9kZSA9PT0gInJpdmVyIik7ICQoImRyYXdSIikudGV4dENvbnRlbnQgPSBtb2RlID09PSAicml2ZXIiID8gIkRvbmUiIDogIkRyYXcgcml2ZXIiOwogIG1hcC5nZXRDb250YWluZXIoKS5zdHlsZS5jdXJzb3IgPSBtb2RlID8gImNyb3NzaGFpciIgOiAiIjsKICBySGludCgpOwp9CmZ1bmN0aW9uIHJIaW50KCl7ICQoInJIaW50IikudGV4dENvbnRlbnQgPSBtb2RlID09PSAicml2ZXIiID8gIkNsaWNrIGFsb25nIHRoZSByaXZlciwgZnJvbSBvbmUgZW5kIHRvIHRoZSBvdGhlci4gQ2xpY2sgRG9uZSB3aGVuIGZpbmlzaGVkLiIgOiBgVGhlIHJpdmVyIGxpbmUgaGFzICR7Uy5yaXZlci5sZW5ndGh9IHBvaW50cy4gV2F0ZXIgc3RhcnRzIGZyb20gdGhpcyBsaW5lLmA7IH0KZnVuY3Rpb24gcml2ZXJDaGFuZ2VkKCl7IHJpdmVyTGluZS5zZXRMYXRMbmdzKFMucml2ZXIpOyBzYXZlKCk7IHJIaW50KCk7IGJ1aWxkR3JpZCgpOyB9CiQoImFkZFoiKS5vbmNsaWNrID0gKCkgPT4gc2V0TW9kZSgiem9uZSIpOwokKCJkcmF3UiIpLm9uY2xpY2sgPSAoKSA9PiBzZXRNb2RlKCJyaXZlciIpOwokKCJ1bmRvUiIpLm9uY2xpY2sgPSAoKSA9PiB7IGlmKFMucml2ZXIubGVuZ3RoKXsgUy5yaXZlci5wb3AoKTsgcml2ZXJDaGFuZ2VkKCk7IH0gfTsKJCgiY2xlYXJSIikub25jbGljayA9ICgpID0+IHsgaWYoY29uZmlybSgiUmVtb3ZlIHRoZSB3aG9sZSByaXZlciBsaW5lPyIpKXsgUy5yaXZlciA9IFtdOyByaXZlckNoYW5nZWQoKTsgfSB9OwptYXAub24oImNsaWNrIiwgZXYgPT4gewogIGNvbnN0IHAgPSBbK2V2LmxhdGxuZy5sYXQudG9GaXhlZCg2KSwgK2V2LmxhdGxuZy5sbmcudG9GaXhlZCg2KV07CiAgaWYobW9kZSA9PT0gInpvbmUiKXsgUy56b25lcy5wdXNoKFtwWzBdLCBwWzFdLCArJCgicmFkIikudmFsdWVdKTsgc2F2ZSgpOyB6b25lcygpOyB9CiAgZWxzZSBpZihtb2RlID09PSAicml2ZXIiKXsgUy5yaXZlci5wdXNoKHApOyByaXZlckNoYW5nZWQoKTsgfQp9KTsKCi8vIC0tLS0tLS0tLS0gY29weSAvIHJlc2V0IC0tLS0tLS0tLS0KJCgiY29weSIpLm9uY2xpY2sgPSAoKSA9PiB7CiAgY29uc3QgdHh0ID0gS0VZUy5tYXAoayA9PiBgJHtOQU1FKGspfTogJHtTW2tdWzBdLnRvRml4ZWQoNil9LCAke1Nba11bMV0udG9GaXhlZCg2KX1gKS5qb2luKCJcbiIpICsKICAgICJcblJpdmVyIHBvaW50cyAobGF0LCBsb24pOlxuIiArIChTLnJpdmVyLmxlbmd0aCA/IFMucml2ZXIubWFwKHogPT4gei5qb2luKCIsICIpKS5qb2luKCJcbiIpIDogIm5vbmUiKSArCiAgICAiXG5PdGhlciBmbG9vZC1wcm9uZSBhcmVhcyAobGF0LCBsb24sIHJhZGl1cyBtKTpcbiIgKyAoUy56b25lcy5sZW5ndGggPyBTLnpvbmVzLm1hcCh6ID0+IHouam9pbigiLCAiKSkuam9pbigiXG4iKSA6ICJub25lIik7CiAgY29uc3QgbyA9ICQoIm91dCIpOyBvLnZhbHVlID0gdHh0OyBvLnN0eWxlLmRpc3BsYXkgPSAiYmxvY2siOyBvLnNlbGVjdCgpOwogIGlmKG5hdmlnYXRvci5jbGlwYm9hcmQpIG5hdmlnYXRvci5jbGlwYm9hcmQud3JpdGVUZXh0KHR4dCkudGhlbigoKSA9PiB7ICQoImNvcHkiKS50ZXh0Q29udGVudCA9ICJDb3BpZWQiOyBzZXRUaW1lb3V0KCgpID0+ICQoImNvcHkiKS50ZXh0Q29udGVudCA9ICJDb3B5IHBvc2l0aW9ucyIsIDE1MDApOyB9KS5jYXRjaCgoKSA9PiB7fSk7Cn07CiQoInJlc2V0UG9zIikub25jbGljayA9ICgpID0+IHsgaWYoIWNvbmZpcm0oIlB1dCB0aGUgbWFya2VycyBhbmQgdGhlIHJpdmVyIGJhY2sgdG8gdGhlIHNhdmVkIGZpbmFsIHBvc2l0aW9ucywgYW5kIHJlbW92ZSB0aGUgb3RoZXIgZmxvb2QtcHJvbmUgYXJlYXM/IikpIHJldHVybjsgUyA9IGNsb25lKERFRik7IHNhdmUoKTsgS0VZUy5mb3JFYWNoKGsgPT4gbWtba10uc2V0TGF0TG5nKFNba10pKTsgcml2ZXJMaW5lLnNldExhdExuZ3MoUy5yaXZlcik7IHpvbmVzKCk7IGhhemFyZHMoKTsgckhpbnQoKTsgYnVpbGRHcmlkKCk7IH07CgovLyAtLS0tLS0tLS0tIGxpdmUgZGF0YSAtLS0tLS0tLS0tCmZ1bmN0aW9uIHNldExpdmUoZCl7CiAgbGl2ZS5kID0gZDsgbGl2ZS5MID0gZDw9MzkgPyAzIDogZDw9NTQgPyAyIDogZDw9NjkgPyAxIDogMDsKICAkKCJkaXN0IikudGV4dENvbnRlbnQgPSBkOwogIGNvbnN0IGVsID0gJCgibHZsIik7IGVsLnRleHRDb250ZW50ID0gWyJOb3JtYWwiLCJMT1ciLCJNT0RFUkFURSIsIkhJR0giXVtsaXZlLkxdOwogIGVsLnN0eWxlLmJhY2tncm91bmQgPSBsaXZlLkwgPyBDT0xbbGl2ZS5MXSA6ICJ2YXIoLS1sYikiOyBlbC5zdHlsZS5jb2xvciA9IGxpdmUuTCA+PSAyID8gIiNmZmYiIDogIiMwMDAiOwogIGlmKCQoImZvbGxvdyIpLmNoZWNrZWQpeyBzdG9wKCk7IHNldFJpc2UocmlzZU9mKGQpKTsgfQogIHBpbnMoKTsKfQpmdW5jdGlvbiBvbk1zZyhzLCB2KXsKICAgIGlmKHMgPT09ICJwcmltYXJ5L2Rpc3RhbmNlIil7IGNvbnN0IGQgPSArdjsgaWYoIWlzTmFOKGQpKSBzZXRMaXZlKGQpOyB9CiAgICBlbHNlIGlmKHMuc3RhcnRzV2l0aCgic3RhdHVzL0FsYXJtTm9kZSIpKXsKICAgICAgY29uc3QgayA9IHMuc2xpY2UoMTYpLCBtID0gdi5tYXRjaCgvXk9OTElORSg/OjooXGQpKT8kLyk7CiAgICAgIGlmKEtFWVMuaW5jbHVkZXMoaykpeyBjb25zdCB3ID0gbGl2ZS5zdGF0W2tdOyBsaXZlLnN0YXRba10gPSB7b246ISFtLCBsOm0gJiYgbVsxXSAhPSBudWxsID8gK21bMV0gOiBudWxsLCB0OkRhdGUubm93KCksIG46bSAmJiB3ICYmIHcub24gPyB3Lm4rMSA6IDF9OyBwaW5zKCk7IH0KICAgIH0KICAgIGVsc2UgaWYocyA9PT0gIm1ldHJpY3MiIHx8IHMgPT09ICJoZWFsdGgiKXsKICAgICAgdHJ5IHsKICAgICAgICBjb25zdCBqID0gSlNPTi5wYXJzZSh2KSwgayA9IGoubm9kZSA9PT0gIlByaW1hcnlTZW5zb3IiIHx8IGoubm9kZSA9PT0gIkJhY2t1cFNlbnNvciIgPyAiUyIgOiBTdHJpbmcoai5ub2RlKS5yZXBsYWNlKCJBbGFybU5vZGUiLCAiIik7CiAgICAgICAgaWYoIUtFWVMuaW5jbHVkZXMoaykpIHJldHVybjsKICAgICAgICBsaXZlLmhlYWx0aFtrXSA9IERhdGUubm93KCk7CiAgICAgICAgaWYocyA9PT0gIm1ldHJpY3MiICYmIGoudHlwZSA9PT0gIlBULTA1IikgbGl2ZS5ub2Rlc1trXSA9IHtsOisoKGouaW5mby5tYXRjaCgvXGQvKSB8fCBbMF0pWzBdKSwgdDpEYXRlLm5vdygpfTsKICAgICAgICBwaW5zKCk7CiAgICAgIH0gY2F0Y2goZSkge30KICAgIH0KfQpjb25zdCBFTUIgPSB3aW5kb3cucGFyZW50ICE9PSB3aW5kb3c7CmlmKEVNQil7CiAgZG9jdW1lbnQuYm9keS5jbGFzc0xpc3QuYWRkKCJlbWIiKTsKICAkKCJjb25uIikudGV4dENvbnRlbnQgPSAiTGl2ZSBkYXRhIGZyb20gdGhlIGRhc2hib2FyZCI7CiAgd2luZG93LmFkZEV2ZW50TGlzdGVuZXIoIm1lc3NhZ2UiLCBlID0+IHsgaWYoZS5zb3VyY2UgIT09IHdpbmRvdy5wYXJlbnQgfHwgIWUuZGF0YSkgcmV0dXJuOyBjb25zdCBtID0gZS5kYXRhOwogICAgaWYobS5jb25uKSAkKCJjb25uIikudGV4dENvbnRlbnQgPSBtLmNvbm47IGVsc2UgaWYodHlwZW9mIG0ucyA9PT0gInN0cmluZyIpIG9uTXNnKG0ucywgU3RyaW5nKG0udikpOyB9KTsKICB3aW5kb3cucGFyZW50LnBvc3RNZXNzYWdlKHttYXBSZWFkeToxfSwgIioiKTsKfSBlbHNlIGlmKHdpbmRvdy5tcXR0KXsKICBjb25zdCBjID0gbXF0dC5jb25uZWN0KEhPU1QsIHt1c2VybmFtZTpVU0VSLCBwYXNzd29yZDpQQVNTLCBjbGllbnRJZDoibWFwXyIrTWF0aC5yYW5kb20oKS50b1N0cmluZygxNikuc2xpY2UoMiw4KSwgcmVjb25uZWN0UGVyaW9kOjMwMDB9KTsKICBjLm9uKCJjb25uZWN0IiwgKCkgPT4geyAkKCJjb25uIikudGV4dENvbnRlbnQgPSAiQ29ubmVjdGVkIHRvIHRoZSBicm9rZXIiOyBjLnN1YnNjcmliZShCQVNFKyIjIik7IH0pOwogIGMub24oImNsb3NlIiwgKCkgPT4geyAkKCJjb25uIikudGV4dENvbnRlbnQgPSAiTm90IGNvbm5lY3RlZCB0byB0aGUgYnJva2VyIjsgfSk7CiAgYy5vbigibWVzc2FnZSIsICh0b3BpYywgYnVmKSA9PiBvbk1zZyh0b3BpYy5zbGljZShCQVNFLmxlbmd0aCksIGJ1Zi50b1N0cmluZygpKSk7Cn0gZWxzZSAkKCJjb25uIikudGV4dENvbnRlbnQgPSAiTGl2ZSBkYXRhIGlzIG9mZiAodGhlIE1RVFQgbGlicmFyeSBkaWQgbm90IGxvYWQpIjsKc2V0SW50ZXJ2YWwocGlucywgMTAwMCk7Cgp6b25lcygpOyBoYXphcmRzKCk7IGxpc3QoKTsgaGludCgpOyBySGludCgpOyBidWlsZEdyaWQoKTsKbWFwLm9uKCJ6b29tZW5kIG1vdmVlbmQiLCAoKSA9PiBzZXRUaW1lb3V0KGxpc3QsIDYwMCkpOwo8L3NjcmlwdD4KPC9ib2R5Pgo8L2h0bWw+Cg==";
+const mapLast = {}; let mapOk = false;
+const toMap = msg => { try { if(mapOk) $("mapFrame").contentWindow.postMessage(msg, "*"); } catch(e){} };
+window.addEventListener("message", e => {
+  if(e.source !== $("mapFrame").contentWindow || !e.data || !e.data.mapReady) return;
+  mapOk = true; toMap({conn: $("conn").lastElementChild.textContent === "Connected" ? "Connected to the broker" : "Not connected to the broker"});
+  Object.keys(mapLast).forEach(s => toMap({s, v: mapLast[s]}));
+});
+try { $("mapFrame").srcdoc = new TextDecoder().decode(Uint8Array.from(atob(MAP_SRC), ch => ch.charCodeAt(0))); } catch(e){ $("mapPanel").style.display = "none"; }
+
+const setConn = (txt, cls) => { $("conn").className = "badge " + cls; $("conn").lastElementChild.textContent = txt;
+  toMap({conn: cls === "on" ? "Connected to the broker" : "Not connected to the broker"}); };
+const c = mqtt.connect(HOST,{username:MAINC?MAINC.u:USER,password:MAINC?MAINC.p:PASS,clientId:"dashboard_"+Math.random().toString(16).slice(2,8),reconnectPeriod:3000});
+c.on("connect",()=>{ st.hbFirst = true; setConn("Connected","on"); c.subscribe(BASE+"#");
+  if(MAINC && adoptAt === Infinity){
+    // main dashboard: wait 3 seconds for the saved history. Take it only if it is newer than this device's.
+    adoptAt = Date.now() + 3000;
+    setTimeout(() => { if(inb.meta && inb.meta.ts > localTs) applySync(); sent = {init:false}; flush(); }, 3050);
+  }
+});
+setInterval(flush, 2000);
+c.on("reconnect",()=>setConn("Reconnecting",""));
+c.on("close",()=>setConn("Disconnected","off"));
+c.on("error",e=>{ setConn("Error: "+e.message,"off");
+  if(MAINC && /refused|authori|password/i.test(e.message)){ $("syncBtn").textContent = "Main login failed - click to fix"; } });
+
+c.on("message",(topic,buf,pkt)=>{
+  const s = topic.slice(BASE.length), v = buf.toString(), live = !pkt.retain;
+  if(s.startsWith("dash/")){ syncIn(s, v, pkt.retain); return; }
+  if(s === "primary/distance" || s === "metrics" || s === "health" || s.startsWith("status/")){ mapLast[s] = v; toMap({s, v}); }
+  if(s.startsWith("status/") || s === "primary/status"){
+    const node = s === "primary/status" ? "PrimarySensor" : s.slice(7), m = v.match(/^ONLINE(?::(\d))?$/), was = stat[node];
+    stat[node] = {on:!!m, l:m && m[1] != null ? +m[1] : null, t:Date.now(), n:m && was && was.on ? was.n+1 : 1};
+    watch();
+    if(s !== "primary/status") return;
+  }
+  const lv = s.slice(-1);
+  if(s==="primary/distance"){ const d=+v; st.dist=d; if(cur) cur.minD=Math.min(cur.minD,d); gauge(d); if(live) point(d); }
+  else if(/^primary\/level[123]$/.test(s)){
+    st.lv[lv] = v==="ON"?1:0;
+    if(v==="ON" && live){ lv0 = {t:Date.now(), L:+lv, got:{}}; if(!cur) startSess(+lv); else cur.peak = Math.max(cur.peak,+lv); }
+    clearTimeout(lt);
+    lt = setTimeout(()=>{
+      const l = st.lv[3]?3:st.lv[2]?2:st.lv[1]?1:0;
+      if(l!==st.level){ const first = st.level==null; st.level=l; showLevel();
+        if(!first && live) log(st.active||"Sensor","Water level changed", null, l?`Level ${l} active`:"Back to normal","LEVEL"); if(l===0 && live) endSess(); }
+    },300);
+  }
+  else if(s==="primary/heartbeat"){
+    const now = Date.now(), n = +(v.split(":")[1]||0);
+    if(st.hb){ const g = now - st.hb; if(g < 30000){ hbs.n++; hbs.sum += g; hbs.min = hbs.n===1 ? g : Math.min(hbs.min,g); hbs.max = Math.max(hbs.max,g); } }
+    if(st.hbFirst){ hbs.exp += 1; st.hbFirst = false; } else if(n > hbs.last) hbs.exp += n - hbs.last; else hbs.exp += 1;
+    hbs.rec++; hbs.last = n; sv("fews_hbs", hbs);
+    if(st.wasLost){ st.wasLost = false; log("Dashboard","Primary heartbeat restored",null,"Heartbeat received again","HB"); }
+    st.hb = now; st.alive = true; if(!st.active) st.active = "PRIMARY";
+  }
+  else if(s==="primary/status"){ $("pst").textContent = v; }
+  else if(s==="system/active_sensor"){ if(v==="PRIMARY"||v==="BACKUP"){ st.active=v; if(live){ log("System","Active sensor changed",null,v+" is now in control","ACTIVE"); if(v==="BACKUP" && pts.length){ const p = pts[pts.length-1]; p[2] = (p[2]?p[2]+" / ":"")+"Failover"; sv("fews_chart",pts); drawChart(); } } } }
+  else if(/^secondary\/level[123]$/.test(s) && v==="ON" && live) { log("Nodes 1 & 2","Forwarded warning",null,"Level "+lv,"STAGE"); casc(1,+lv); }
+  else if(/^tertiary\/level[123]$/.test(s) && v==="ON" && live) { log("Nodes 3 & 4","Forwarded warning",null,"Level "+lv,"STAGE"); casc(2,+lv); }
+  else if(s==="health"){ try{ const j = JSON.parse(v); health[j.node] = {t:Date.now(), up:j.up, mq:j.mq, wf:j.wf, er:j.er}; sv("fews_health",health); }catch(e){} }
+  else if(s==="metrics"){
+    try{
+      const j = JSON.parse(v);
+      log(j.node, `${tn(j.type)} ${TESTS[j.type]||""}`, j.ms, `${j.info} (device clock ${j.clock})`, j.type);
+      if(j.type==="PT-05"){ st.nodes[j.node]={l:+(j.info.match(/\d/)||[0])[0], t:Date.now(), ms:j.ms}; nodes();
+        const L5 = +(j.info.match(/\d/)||[0])[0]; if(cur && !cur.nodes.includes(j.node)) cur.nodes.push(j.node); if(j.node==="AlarmNode5") casc(3,L5); }
+    }catch(e){}
+  }
+});
+
+setInterval(()=>{
+  tick();
+  const age = (Date.now()-st.hb)/1000;
+  $("act").textContent = st.active || "–";
+  const bOn = online("BackupSensor"), bs = $("bst");
+  bs.textContent = !bOn ? "OFFLINE" : st.active==="BACKUP" ? "IN CONTROL" : "STANDBY";
+  bs.style.color = !bOn ? "var(--mute)" : st.active==="BACKUP" ? "var(--l2)" : "var(--ok)";
+  if(!st.hb){ $("hb").textContent="none yet"; return; }
+  $("hb").textContent = age<9 ? age.toFixed(1)+" s ago" : "LOST";
+  $("hb").style.color = age<9 ? "var(--ink)" : "var(--l3)";
+  if(age>=9 && st.alive){ st.alive=false; st.wasLost=true; log("Dashboard","Primary heartbeat lost",null,"No heartbeat for 9 s","HB"); }
+},1000);
+
+const q = x => `"${String(x).replace(/"/g,'""')}"`;
+function save(name, rows){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([rows.join("\n")],{type:"text/csv"}));
+  a.download = name; a.click();
+}
+$("csv").onclick = ()=> save("fews_history.csv", ["Date (MM/DD/YY),Time,Source,Event,ms,Details"].concat(
+  hist.map(h=>[dt(h.t),tm(h.t),h.src,h.ev,h.ms==null?"":h.ms,h.info].map(q).join(","))));
+$("csvA").onclick = ()=> save("fews_alerts.csv", ["Date (MM/DD/YY),Start,Duration (s),Peak level,Closest (cm),Nodes activated,To nodes 1&2 (ms),To nodes 3&4 (ms),To node 5 (ms),Control"].concat(
+  sess.map(x=>[dt(x.start),tm(x.start),((x.end-x.start)/1000).toFixed(1),x.peak,x.minD,x.nodes.length+"/5",x.s12==null?"":x.s12.toFixed(0),x.s34==null?"":x.s34.toFixed(0),x.s5==null?"":x.s5.toFixed(0),x.ctl].map(q).join(","))));
+$("rep").onclick = ()=>{
+  const r = ftEval(), lab = {pass:"Passed", part:"In progress", none:"Not yet tested"};
+  const rows = ["Functional tests","Test,Status,Evidence"].concat(FT.map(([id,n])=>[id+" "+n, lab[r[id][0]], r[id][1]].map(q).join(",")));
+  rows.push("", "Performance tests (ms)", "Test,Samples,Min,Avg,Max");
+  Object.keys(TESTS).forEach(k => {
+    const v = hist.filter(h=>h.type===k).map(h=>h.ms);
+    rows.push(v.length ? [tn(k)+" "+TESTS[k], v.length, Math.min(...v).toFixed(2), (v.reduce((a,b)=>a+b,0)/v.length).toFixed(2), Math.max(...v).toFixed(2)].map(q).join(",") : q(tn(k)+" "+TESTS[k])+",0,,,");
+  });
+  save("fews_test_report.csv", rows);
+};
+$("clr").onclick = ()=>{
+  if(!MAINC && syncedAt){ alert("The history is shared. Clear it from the main dashboard."); return; }
+  if(confirm("Delete all saved history and the water height chart?" + (MAINC ? " This clears it on every device." : ""))){ gen = Date.now(); hbase = 0; dirty.hist = dirty.chart = dirty.meta = true; sent.chartT = 1; localTs = Date.now(); hist=[]; pts=[]; sess=[]; cur=null; health={}; mon=0; hbs={n:0,sum:0,min:0,max:0,exp:0,rec:0,last:0}; ["fews_hist","fews_chart","fews_sess","fews_health","fews_mon","fews_hbs"].forEach(k=>localStorage.removeItem(k)); render(); drawChart(); } };
+
+(function(){
+  const w = $("wrap"); let down = false, x0 = 0, s0 = 0;
+  w.addEventListener("wheel", e => { if(w.scrollWidth > w.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)){ w.scrollLeft += e.deltaY; e.preventDefault(); } }, {passive:false});
+  w.addEventListener("mousedown", e => { down = true; x0 = e.pageX; s0 = w.scrollLeft; w.style.cursor = "grabbing"; });
+  window.addEventListener("mouseup", () => { down = false; w.style.cursor = "grab"; });
+  window.addEventListener("mousemove", e => { if(down) w.scrollLeft = s0 - (e.pageX - x0); });
+})();
+$("syncBtn").onclick = () => {
+  if(MAINC){
+    if(confirm("Stop using this device as the main dashboard?")){ localStorage.removeItem("fews_main"); location.reload(); }
+    return;
+  }
+  const u = prompt("Make this device the MAIN dashboard.\n\nIts history becomes the shared history on every device. Do this on the device that has the history you want to keep.\n\nHiveMQ username that can publish:", "DashboardMain");
+  if(!u) return;
+  const pw = prompt("Password for " + u + ":");
+  if(!pw) return;
+  let bk = null; try { bk = JSON.parse(localStorage.getItem("fews_backup") || "null"); } catch(e){}
+  if(bk && bk.hist && bk.hist.length && confirm("This device kept its own older history (" + bk.hist.length + " events, set aside " + dt(bk.t) + " " + tm(bk.t) + ").\n\nOK = use that older history as the shared history.\nCancel = keep the current shared history.")){
+    localStorage.setItem("fews_hist", JSON.stringify(bk.hist)); localStorage.setItem("fews_chart", JSON.stringify(bk.pts || [])); localStorage.setItem("fews_sess", JSON.stringify(bk.sess || []));
+    localStorage.setItem("fews_hbs", JSON.stringify(bk.hbs || {})); localStorage.setItem("fews_mon", bk.mon || 0); localStorage.setItem("fews_base", bk.hbase || 0);
+    localStorage.setItem("fews_gen", Date.now()); localStorage.setItem("fews_ts", Date.now()); localStorage.removeItem("fews_backup");
+  }
+  localStorage.setItem("fews_main", JSON.stringify({u:u.trim(), p:pw})); location.reload();
+};
+syncBadge();
+render(); nodes(); drawChart();
+</script>
+</body>
+</html>
