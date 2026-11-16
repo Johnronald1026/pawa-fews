@@ -22,7 +22,7 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:s
 h1{font:800 28px "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;margin:0;display:flex;gap:10px;align-items:center}
 header p{margin:2px 0 0;color:#b5cbd7;font-size:13px;letter-spacing:.04em}
 .badge{display:inline-flex;gap:8px;align-items:center;padding:6px 14px;border:1px solid rgba(255,255,255,.5);font:600 13px "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#d6e4eb;position:relative;z-index:1}
-button.badge{background:none;cursor:pointer}button.badge.main{background:var(--l1);color:#000;border-color:var(--l1)}button.badge.syn{background:#fff;color:var(--ink);border-color:#fff}
+button.badge{background:none;cursor:pointer}button.badge.main{background:var(--l1);color:#000;border-color:var(--l1)}button.badge.snd{background:var(--ok);color:#fff;border-color:var(--ok)}button.badge.syn{background:#fff;color:var(--ink);border-color:#fff}
 .badge.on{background:#fff;color:var(--ink);border-color:#fff}.badge.off{color:#ffb8bf;border-color:#ffb8bf}
 main{max-width:1200px;margin:0 auto;padding:22px 24px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
 .top{display:grid;grid-template-columns:400px minmax(0,1fr);gap:20px}
@@ -139,8 +139,8 @@ button.alt{background:#fff;color:var(--ink)}button:hover{opacity:.85}button:focu
 </svg>
 
 <header>
-  <div><h1><svg class="ic" style="width:26px;height:26px"><use href="#i-drop"/></svg>Pawa Flood Early Warning</h1><p>BARANGAY PAWA, MATNOG, SORSOGON &middot; LIVE MQTT SIMULATION DATA &middot; VERSION 9 (NOV 16)</p></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative;z-index:1"><button id="syncBtn" class="badge" type="button" title="Shared history">History: this device only</button><span id="conn" class="badge"><svg class="ic"><use href="#i-wifi"/></svg><span>Connecting</span></span></div>
+  <div><h1><svg class="ic" style="width:26px;height:26px"><use href="#i-drop"/></svg>Pawa Flood Early Warning</h1><p>BARANGAY PAWA, MATNOG, SORSOGON &middot; LIVE MQTT SIMULATION DATA &middot; VERSION 10 (NOV 17)</p></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative;z-index:1"><button id="sndBtn" class="badge" type="button" title="Alert sound">Sound: off (tap to turn on)</button><button id="syncBtn" class="badge" type="button" title="Shared history">History: this device only</button><span id="conn" class="badge"><svg class="ic"><use href="#i-wifi"/></svg><span>Connecting</span></span></div>
   <div class="hw" aria-hidden="true">
     <svg class="w1" viewBox="0 0 2400 32" preserveAspectRatio="none"><path d="M0 14 q50 -16 100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 V32 H0 Z"/></svg>
     <svg class="w2" viewBox="0 0 2400 32" preserveAspectRatio="none"><path d="M0 22 q50 -12 100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 V32 H0 Z"/></svg>
@@ -510,7 +510,23 @@ function gauge(d){
   $("dist").textContent = d;
   $("next").textContent = L===3 ? "Highest level reached" : `${c - [69,54,39][L]} cm above the ${["LOW","MODERATE","HIGH"][L]} line`;
 }
+// ---------- alert sound ----------
+// One sound per level, looped for 1 minute after each level change. The sound follows the level.
+// Browsers only allow sound after a tap, so each device turns it on once with the Sound button.
+const SND = {1:"sound_low.mp3", 2:"sound_moderate.mp3", 3:"sound_high.mp3"}, aud = {};
+let sndOn = false, sndLv = 0, sndT = null;
+function sndStop(){ clearTimeout(sndT); Object.keys(aud).forEach(k => { try { aud[k].pause(); } catch(e){} }); }
+function sndStart(l){
+  sndStop();
+  const a = aud[l]; if(!sndOn || !a) return;
+  try { a.muted = false; a.loop = true; a.currentTime = 0; const p = a.play(); if(p && p.catch) p.catch(() => {}); } catch(e){}
+  sndT = setTimeout(sndStop, 60000);
+}
+function soundLevel(l){ l = l || 0; if(l === sndLv) return; sndLv = l; if(l) sndStart(l); else sndStop(); }
+function sndBadge(){ const b = $("sndBtn"); b.className = "badge" + (sndOn ? " snd" : ""); b.textContent = sndOn ? "Sound: on" : "Sound: off (tap to turn on)"; }
+
 function showLevel(){
+  soundLevel(st.level);
   const l = st.level, el = $("lvl");
   el.textContent = l==null ? "No data" : ["Normal","MONITAR","PREPARAR","EBAKWAR"][l];
   el.style.background = l ? COL[l] : "var(--lb)";
@@ -708,6 +724,15 @@ $("syncBtn").onclick = () => {
     localStorage.setItem("fews_gen", Date.now()); localStorage.setItem("fews_ts", Date.now()); localStorage.removeItem("fews_backup");
   }
   localStorage.setItem("fews_main", JSON.stringify({u:u.trim(), p:pw})); location.reload();
+};
+$("sndBtn").onclick = () => {
+  if(sndOn){ sndOn = false; sndStop(); sndBadge(); return; }
+  sndOn = true;
+  // create and unlock the three sounds inside this tap (phones need that)
+  [1,2,3].forEach(l => { if(!aud[l]){ aud[l] = new Audio(SND[l]); aud[l].preload = "auto"; }
+    if(l !== sndLv){ const a = aud[l]; try { a.muted = true; const p = a.play(); if(p && p.then) p.then(() => { if(sndLv !== l || !sndOn){ a.pause(); } a.muted = false; }).catch(() => { a.muted = false; }); } catch(e){} } });
+  if(sndLv) sndStart(sndLv);
+  sndBadge();
 };
 syncBadge();
 render(); nodes(); drawChart();
