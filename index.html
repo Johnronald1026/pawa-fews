@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="author" content="John Ronald Barabicho">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Pawa Flood Early Warning Dashboard","applicationCategory":"Flood early warning system","creator":{"@type":"Person","name":"John Ronald Barabicho"},"author":{"@type":"Person","name":"John Ronald Barabicho"}}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pawa Flood Early Warning Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
@@ -139,7 +141,7 @@ button.alt{background:#fff;color:var(--ink)}button:hover{opacity:.85}button:focu
 </svg>
 
 <header>
-  <div><h1><svg class="ic" style="width:26px;height:26px"><use href="#i-drop"/></svg>Pawa Flood Early Warning</h1><p>BARANGAY PAWA, MATNOG, SORSOGON &middot; LIVE MQTT SIMULATION DATA &middot; VERSION 10 (NOV 17)</p></div>
+  <div><h1><svg class="ic" style="width:26px;height:26px"><use href="#i-drop"/></svg>Pawa Flood Early Warning</h1><p>BARANGAY PAWA, MATNOG, SORSOGON &middot; LIVE MQTT SIMULATION DATA</p></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative;z-index:1"><button id="sndBtn" class="badge" type="button" title="Alert sound">Sound: off (tap to turn on)</button><button id="syncBtn" class="badge" type="button" title="Shared history">History: this device only</button><span id="conn" class="badge"><svg class="ic"><use href="#i-wifi"/></svg><span>Connecting</span></span></div>
   <div class="hw" aria-hidden="true">
     <svg class="w1" viewBox="0 0 2400 32" preserveAspectRatio="none"><path d="M0 14 q50 -16 100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 t100 0 V32 H0 Z"/></svg>
@@ -417,6 +419,7 @@ function watch(){
     if(wasOn[n] === undefined){ wasOn[n] = on; ch = true; return; }
     if(wasOn[n] !== on){ wasOn[n] = on; ch = true; if(c.connected) log(n, on ? "Node is online" : "Node went offline", null, on ? "Status received again" : "No status from the node", "NODE"); } });
   if(ch){ nodes(); hRender(); }
+  sndUpdate();
 }
 function tick(){
   if(c.connected){ mon += 1000; if(mon%5000===0) localStorage.setItem("fews_mon", mon); }
@@ -522,11 +525,12 @@ function sndStart(l){
   try { a.muted = false; a.loop = true; a.currentTime = 0; const p = a.play(); if(p && p.catch) p.catch(() => {}); } catch(e){}
   sndT = setTimeout(sndStop, 60000);
 }
+function sndUpdate(){ soundLevel(ALARMS.some(online) ? st.level : 0); }
 function soundLevel(l){ l = l || 0; if(l === sndLv) return; sndLv = l; if(l) sndStart(l); else sndStop(); }
 function sndBadge(){ const b = $("sndBtn"); b.className = "badge" + (sndOn ? " snd" : ""); b.textContent = sndOn ? "Sound: on" : "Sound: off (tap to turn on)"; }
 
 function showLevel(){
-  soundLevel(st.level);
+  sndUpdate();
   const l = st.level, el = $("lvl");
   el.textContent = l==null ? "No data" : ["Normal","MONITAR","PREPARAR","EBAKWAR"][l];
   el.style.background = l ? COL[l] : "var(--lb)";
@@ -737,5 +741,6 @@ $("sndBtn").onclick = () => {
 syncBadge();
 render(); nodes(); drawChart();
 </script>
+<footer style="font-size:1px;line-height:1px;color:var(--bg);text-align:center;margin:0;padding:0;user-select:none" aria-hidden="true">Developed by John Ronald Barabicho</footer>
 </body>
 </html>
