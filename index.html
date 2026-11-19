@@ -516,7 +516,8 @@ function gauge(d){
 // ---------- alert sound ----------
 // One sound per level, looped for 1 minute after each level change. The sound follows the level.
 // Browsers only allow sound after a tap, so each device turns it on once with the Sound button.
-const SND = {1:"sound_low.mp3", 2:"sound_moderate.mp3", 3:"sound_high.mp3"}, aud = {};
+// ?v=2 makes browsers load the new sounds instead of an old saved copy
+const SND = {1:"sound_low.mp3?v=2", 2:"sound_moderate.mp3?v=2", 3:"sound_high.mp3?v=2"}, aud = {};
 let sndOn = false, sndLv = 0, sndT = null;
 function sndStop(){ clearTimeout(sndT); Object.keys(aud).forEach(k => { try { aud[k].pause(); } catch(e){} }); }
 function sndStart(l){
